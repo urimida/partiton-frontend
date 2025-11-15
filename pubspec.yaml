@@ -1,0 +1,61 @@
+name: partition_app
+description: A Flutter application for partition management with Spring backend integration.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # 상태 관리
+  provider: ^6.1.1
+  
+  # HTTP 통신
+  http: ^1.1.0
+  dio: ^5.4.0
+  
+  # 로컬 저장소
+  shared_preferences: ^2.2.2
+  
+  # JSON 직렬화
+  json_annotation: ^4.8.1
+  
+  # UI 관련
+  cupertino_icons: ^1.0.6
+  flutter_svg: ^2.0.9
+  cached_network_image: ^3.3.0
+  
+  # 유틸리티
+  intl: ^0.18.1
+  logger: ^2.0.2+1
+  connectivity_plus: ^5.0.2
+  
+  # 폼 검증
+  flutter_form_builder: ^9.1.1
+  form_builder_validators: ^9.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  build_runner: ^2.4.7
+  json_serializable: ^6.7.1
+
+flutter:
+  uses-material-design: true
+  
+  # Assets
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/fonts/
+  
+  # Fonts
+  # fonts:
+  #   - family: CustomFont
+  #     fonts:
+  #       - asset: assets/fonts/CustomFont-Regular.ttf
+
