@@ -29,21 +29,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _handleRegister() async {
+    // TODO: 퍼블리싱용 - 검증 없이 바로 회원가입
+    // 실제 백엔드 연동 시 아래 주석을 해제하세요
+    /*
     if (!_formKey.currentState!.validate()) {
       return;
     }
+    */
 
     final authProvider = context.read<AuthProvider>();
     final success = await authProvider.register(
-      email: _emailController.text.trim(),
-      password: _passwordController.text,
+      email: _emailController.text.trim().isNotEmpty
+          ? _emailController.text.trim()
+          : 'demo@example.com',
+      password: _passwordController.text.isNotEmpty
+          ? _passwordController.text
+          : 'password',
       name: _nameController.text.trim().isEmpty
           ? null
           : _nameController.text.trim(),
     );
 
     if (success && mounted) {
-      Navigator.of(context).pushReplacementNamed(AppRouter.partitionList);
+      Navigator.of(context).pushReplacementNamed(AppRouter.partitionMain);
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -154,20 +162,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   },
                 ),
                 const SizedBox(height: 24),
-                Consumer<AuthProvider>(
-                  builder: (context, authProvider, _) {
-                    return ElevatedButton(
-                      onPressed:
-                          authProvider.isLoading ? null : _handleRegister,
-                      child: authProvider.isLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
+                Builder(
+                  builder: (context) {
+                    final authProvider = Provider.of<AuthProvider>(context, listen: true);
+                    return SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed:
+                            authProvider.isLoading ? null : _handleRegister,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: authProvider.isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                '회원가입',
+                                style: TextStyle(fontSize: 16),
                               ),
-                            )
-                          : const Text('회원가입'),
+                      ),
                     );
                   },
                 ),

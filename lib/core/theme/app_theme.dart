@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'dart:io';
+import 'package:partition_app/shared/utils/app_colors.dart';
 
 class AppTheme {
   /// iOS 스타일 테마 (Cupertino)
@@ -30,12 +31,12 @@ class AppTheme {
         centerTitle: true,
         elevation: 0,
       ),
-      cardTheme: CardTheme(
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
+      // cardTheme: CardTheme(
+      //   elevation: 2,
+      //   shape: RoundedRectangleBorder(
+      //     borderRadius: BorderRadius.circular(12),
+      //   ),
+      // ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -70,12 +71,12 @@ class AppTheme {
         centerTitle: true,
         elevation: 0,
       ),
-      cardTheme: CardTheme(
-        elevation: 2,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-      ),
+      // cardTheme: CardTheme(
+      //   elevation: 2,
+      //   shape: RoundedRectangleBorder(
+      //     borderRadius: BorderRadius.circular(12),
+      //   ),
+      // ),
       inputDecorationTheme: InputDecorationTheme(
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),

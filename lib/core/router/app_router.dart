@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:partition_app/features/auth/screens/login_screen.dart';
 import 'package:partition_app/features/auth/screens/register_screen.dart';
-import 'package:partition_app/features/partition/screens/partition_list_screen.dart';
-import 'package:partition_app/features/partition/screens/partition_detail_screen.dart';
+import 'package:partition_app/features/partition/screens/partition_main_screen.dart';
 import 'package:partition_app/features/settings/screens/settings_screen.dart';
 import 'package:partition_app/shared/widgets/not_found_screen.dart';
 
@@ -12,8 +11,7 @@ class AppRouter {
   // Route names
   static const String login = '/login';
   static const String register = '/register';
-  static const String partitionList = '/partitions';
-  static const String partitionDetail = '/partitions/:id';
+  static const String partitionMain = '/partitions';
   static const String settings = '/settings';
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -26,14 +24,9 @@ class AppRouter {
         return MaterialPageRoute(
           builder: (_) => const RegisterScreen(),
         );
-      case partitionList:
+      case partitionMain:
         return MaterialPageRoute(
-          builder: (_) => const PartitionListScreen(),
-        );
-      case partitionDetail:
-        final id = settings.arguments as String?;
-        return MaterialPageRoute(
-          builder: (_) => PartitionDetailScreen(partitionId: id ?? ''),
+          builder: (_) => const PartitionMainScreen(),
         );
       case AppRouter.settings:
         return MaterialPageRoute(

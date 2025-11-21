@@ -164,10 +164,11 @@ class _PartitionCard extends StatelessWidget {
         trailing: IconButton(
           icon: const Icon(Icons.arrow_forward_ios),
           onPressed: () {
-            Navigator.of(context).pushNamed(
-              AppRouter.partitionDetail,
-              arguments: partition.id,
-            );
+            // TODO: 파티션 상세 화면은 더 이상 사용하지 않음
+            // Navigator.of(context).pushNamed(
+            //   AppRouter.partitionDetail,
+            //   arguments: partition.id,
+            // );
           },
         ),
         onTap: () {

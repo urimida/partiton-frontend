@@ -1,4 +1,4 @@
-# Partition App - Flutter Frontend
+r# Partition App - Flutter Frontend
 
 Spring 백엔드와 연동하는 Flutter 기반 파티션 관리 앱의 프론트엔드 프로젝트입니다.
 
