@@ -45,6 +45,16 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- 카카오 로그인 커스텀 URL 스킴 -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kakao0638124027aec1134312be64899dcde2</string>
+			</array>
+		</dict>
+	</array>
 	<!-- iOS 네트워크 보안 설정 (개발 환경용) -->
 	<key>NSAppTransportSecurity</key>
 	<dict>

@@ -23,30 +23,12 @@ class AuthProvider extends ChangeNotifier {
     _setLoading(true);
     _clearError();
 
-    // TODO: 퍼블리싱용 임시 처리 - 아무 입력이나 로그인 성공
-    // 실제 백엔드 연동 시 아래 주석을 해제하고 더미 코드를 제거하세요
-    await Future.delayed(const Duration(milliseconds: 500)); // 로딩 효과
-    
-    // 더미 사용자 생성
-    _user = UserModel(
-      id: 'demo-user-001',
-      email: email.isNotEmpty ? email : 'demo@example.com',
-      name: 'Demo User',
-      createdAt: DateTime.now(),
-    );
-    
-    DebugHelper.log('✅ 로그인 성공');
-    DebugHelper.log('사용자 ID: ${_user?.id}');
-    DebugHelper.log('사용자 이메일: ${_user?.email}');
-    
-    _setLoading(false);
-    return true;
-
-    // 실제 백엔드 연동 코드 (주석 처리됨)
-    /*
     try {
       final authResponse = await _authService.login(email, password);
       _user = authResponse.user;
+      DebugHelper.log('✅ 로그인 성공');
+      DebugHelper.log('사용자 ID: ${_user?.id}');
+      DebugHelper.log('사용자 이메일: ${_user?.email}');
       _setLoading(false);
       return true;
     } on ApiException catch (e) {
@@ -58,7 +40,47 @@ class AuthProvider extends ChangeNotifier {
       _setLoading(false);
       return false;
     }
-    */
+  }
+
+  /// 카카오 로그인
+  /// 명세서에 따라 kakaoAccessToken만 전송
+  /// 반환값: (성공 여부, userRole)
+  Future<({bool success, String? userRole})> loginWithKakao({
+    required String kakaoAccessToken,
+  }) async {
+    DebugHelper.log('🔐 카카오 로그인 시도 시작');
+    DebugHelper.log('카카오 Access Token: ${kakaoAccessToken.substring(0, 20)}...');
+    
+    _setLoading(true);
+    _clearError();
+
+    try {
+      final kakaoAuthResponse = await _authService.loginWithKakao(
+        kakaoAccessToken: kakaoAccessToken,
+      );
+      
+      DebugHelper.log('✅ 카카오 로그인 성공');
+      String? userRole;
+      if (kakaoAuthResponse.result != null) {
+        DebugHelper.log('Access Token 저장 완료');
+        DebugHelper.log('Refresh Token 저장 완료');
+        DebugHelper.log('Access Token 만료 시간: ${kakaoAuthResponse.result!.accessTokenExpiresIn}ms');
+        userRole = kakaoAuthResponse.result!.userRole;
+        DebugHelper.log('User Role: $userRole');
+      }
+      
+      _setLoading(false);
+      return (success: true, userRole: userRole);
+    } on ApiException catch (e) {
+      _setError(e.message);
+      _setLoading(false);
+      return (success: false, userRole: null);
+    } catch (e) {
+      DebugHelper.log('❌ 카카오 로그인 오류: $e');
+      _setError('카카오 로그인 중 오류가 발생했습니다.');
+      _setLoading(false);
+      return (success: false, userRole: null);
+    }
   }
 
   Future<bool> register({
@@ -69,23 +91,6 @@ class AuthProvider extends ChangeNotifier {
     _setLoading(true);
     _clearError();
 
-    // TODO: 퍼블리싱용 임시 처리 - 아무 입력이나 회원가입 성공
-    // 실제 백엔드 연동 시 아래 주석을 해제하고 더미 코드를 제거하세요
-    await Future.delayed(const Duration(milliseconds: 500)); // 로딩 효과
-    
-    // 더미 사용자 생성
-    _user = UserModel(
-      id: 'demo-user-${DateTime.now().millisecondsSinceEpoch}',
-      email: email.isNotEmpty ? email : 'demo@example.com',
-      name: name ?? 'Demo User',
-      createdAt: DateTime.now(),
-    );
-    
-    _setLoading(false);
-    return true;
-
-    // 실제 백엔드 연동 코드 (주석 처리됨)
-    /*
     try {
       final authResponse = await _authService.register(
         email: email,
@@ -104,7 +109,6 @@ class AuthProvider extends ChangeNotifier {
       _setLoading(false);
       return false;
     }
-    */
   }
 
   Future<void> logout() async {

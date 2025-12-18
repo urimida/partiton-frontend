@@ -1,9 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:partition_app/shared/widgets/home_calendar_widget.dart';
+import 'package:partition_app/shared/widgets/primary_button.dart';
+import 'package:partition_app/shared/widgets/chore_assignment_modal.dart';
+import 'package:partition_app/shared/widgets/schedule_registration_modal.dart';
 
-class PartitionHomeScreen extends StatelessWidget {
+class PartitionHomeScreen extends StatefulWidget {
   const PartitionHomeScreen({super.key});
+
+  @override
+  State<PartitionHomeScreen> createState() => _PartitionHomeScreenState();
+}
+
+class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
+  DateTime _selectedDate = DateTime.now();
+
+  void _onDateSelected(DateTime date) {
+    setState(() {
+      _selectedDate = date;
+    });
+  }
+
+  void _showScheduleRegistrationModal(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => ScheduleRegistrationModal(
+        selectedDate: _selectedDate,
+      ),
+    );
+  }
+
+  void _showChoreAssignmentModal(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => const ChoreAssignmentModal(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +62,19 @@ class PartitionHomeScreen extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               height: 382,
-              child: const HomeCalendarWidget(),
+              child: HomeCalendarWidget(
+                onDateSelected: _onDateSelected,
+              ),
+            ),
+            const SizedBox(height: 10),
+            PrimaryButton(
+              label: '일정 등록하기',
+              onPressed: () => _showScheduleRegistrationModal(context),
+            ),
+            const SizedBox(height: 10),
+            PrimaryButton(
+              label: '집안일 자동 배정',
+              onPressed: () => _showChoreAssignmentModal(context),
             ),
             const SizedBox(height: 20), // 하단 여백 추가
           ],

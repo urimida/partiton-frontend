@@ -40,12 +40,6 @@ class DebugHomeScreen extends StatelessWidget {
             icon: Icons.login,
             route: AppRouter.login,
           ),
-          _buildMenuItem(
-            context,
-            title: '회원가입 화면',
-            icon: Icons.person_add,
-            route: AppRouter.register,
-          ),
           const SizedBox(height: 16),
           
           // 파티션 관련

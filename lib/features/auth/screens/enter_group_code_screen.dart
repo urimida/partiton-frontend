@@ -1,0 +1,228 @@
+import 'package:flutter/material.dart';
+import 'dart:ui';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:partition_app/core/router/app_router.dart';
+import 'package:partition_app/core/storage/storage_service.dart';
+import 'package:partition_app/shared/widgets/glassmorphism_button.dart';
+
+class EnterGroupCodeScreen extends StatefulWidget {
+  const EnterGroupCodeScreen({super.key});
+
+  @override
+  State<EnterGroupCodeScreen> createState() => _EnterGroupCodeScreenState();
+}
+
+class _EnterGroupCodeScreenState extends State<EnterGroupCodeScreen> {
+  final TextEditingController _codeController = TextEditingController();
+  bool _isLoading = false;
+  String? _resultMessage;
+  bool _isSuccess = false;
+  bool _hasCode = false;
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleSubmit() async {
+    final code = _codeController.text.trim();
+    if (code.isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+      _resultMessage = null;
+      _isSuccess = false;
+    });
+
+    // TODO: 실제 그룹 코드 검증 API 호출
+    // 임시로 시뮬레이션
+    await Future.delayed(const Duration(seconds: 1));
+
+    // 시뮬레이션: 다양한 결과 테스트
+    if (code == 'INVALID') {
+      setState(() {
+        _resultMessage = '해당 그룹 코드는 존재하지 않습니다.';
+        _isSuccess = false;
+        _isLoading = false;
+      });
+    } else if (code == 'FULL') {
+      setState(() {
+        _resultMessage = '해당 그룹은 이미 가득 찼습니다.';
+        _isSuccess = false;
+        _isLoading = false;
+      });
+    } else {
+      // 성공
+      setState(() {
+        _resultMessage = '그룹 코드 입력 완료';
+        _isSuccess = true;
+        _isLoading = false;
+      });
+
+      // 온보딩 완료 처리
+      await StorageService.setOnboardingCompleted(true);
+
+      // 성공 시 설문 화면으로 이동
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (mounted) {
+        Navigator.of(context).pushReplacementNamed(AppRouter.preferenceSurvey);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        // 백그라운드 이미지
+        Positioned.fill(
+          child: Image.asset(
+            'assets/images/background.png',
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(color: Colors.black);
+            },
+          ),
+        ),
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          body: SafeArea(
+            child: Center(
+              child: Transform.translate(
+                offset: const Offset(0, -20),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 로고 이미지
+                    SvgPicture.asset(
+                      'assets/icons/logo.svg',
+                      width: 80,
+                      height: 80,
+                    ),
+                    const SizedBox(height: 20),
+                    // 글래스모피즘 다이얼로그 박스
+                    _buildDialogBox(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDialogBox() {
+    return Container(
+      width: 294,
+      constraints: const BoxConstraints(
+        minHeight: 180,
+      ),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white,
+          width: 0.5,
+        ),
+        gradient: const RadialGradient(
+          center: Alignment(-0.1212, -0.1178),
+          radius: 1.6319,
+          colors: [
+            Color.fromRGBO(255, 255, 255, 0.10),
+            Color.fromRGBO(255, 255, 255, 0.15),
+          ],
+          stops: [0.0, 1.0],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.white.withOpacity(0.25),
+            blurRadius: 20,
+            spreadRadius: 0,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const Text(
+                  '그룹 코드를 입력해주세요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                // 그룹 코드 입력 필드
+                GlassmorphismInputField(
+                  controller: _codeController,
+                  hintText: '그룹 코드',
+                  onChanged: (value) {
+                    setState(() {
+                      _hasCode = value.trim().isNotEmpty;
+                    });
+                  },
+                  autofocus: true,
+                  width: 183,
+                  height: 31,
+                ),
+                const SizedBox(height: 16),
+                // 확인 버튼
+                _isLoading
+                    ? const SizedBox(
+                        width: 183,
+                        height: 31,
+                        child: Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    : GlassmorphismButton(
+                        text: '확인',
+                        onTap: _hasCode ? _handleSubmit : null,
+                        width: 183,
+                        height: 31,
+                        enabled: _hasCode,
+                      ),
+                // 결과 메시지
+                if (_resultMessage != null) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    _resultMessage!,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _isSuccess ? Colors.green : Colors.red,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

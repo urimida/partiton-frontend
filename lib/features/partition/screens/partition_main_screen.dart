@@ -16,7 +16,8 @@ class PartitionMainScreen extends StatefulWidget {
   State<PartitionMainScreen> createState() => _PartitionMainScreenState();
 }
 
-class _PartitionMainScreenState extends State<PartitionMainScreen> {
+class _PartitionMainScreenState extends State<PartitionMainScreen>
+    with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
 
   final List<Widget> _screens = [
@@ -32,6 +33,29 @@ class _PartitionMainScreenState extends State<PartitionMainScreen> {
     '파티션 리포트',
     '게시판',
   ];
+
+  AnimationController? _glowController;
+  Animation<double>? _glowAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+
+    _glowAnimation = CurvedAnimation(
+      parent: _glowController!,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  void dispose() {
+    _glowController?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,50 +96,145 @@ class _PartitionMainScreenState extends State<PartitionMainScreen> {
           bottomNavigationBar: SafeArea(
             top: false,
             bottom: false,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: SizedBox(
-                width: 391,
-                height: 121,
-                child: GlassmorphismWidget(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
+            child: SizedBox(
+              height: 150,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.topCenter,
+                children: [
+                  Positioned(
+                    top: 35,
+                    left: 0,
+                    right: 0,
+                    child: ClipPath(
+                      clipper: _BottomNavClipper(),
+                      child: SizedBox(
+                        height: 121,
+                        child: GlassmorphismWidget(
+                          borderRadius: BorderRadius.circular(24),
+                          backgroundOpacity: 0.4,
+                          showStroke: true,
+                          borderColor: Colors.white.withOpacity(0.25),
+                          strokeGradient: const RadialGradient(
+                            center: Alignment(0.2535, -0.6739),
+                            radius: 2.5,
+                            colors: [
+                              Color.fromRGBO(255, 255, 255, 0.3),
+                              Color.fromRGBO(255, 255, 255, 0.0),
+                            ],
+                            stops: [0.0, 1.0],
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 20),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _buildNavItem(
+                                icon: _currentIndex == 0
+                                    ? Icons.calendar_today
+                                    : Icons.calendar_today_outlined,
+                                label: '홈',
+                                index: 0,
+                              ),
+                              _buildNavItem(
+                                icon: _currentIndex == 1
+                                    ? Icons.inventory_2
+                                    : Icons.inventory_2_outlined,
+                                label: '공용 소비',
+                                index: 1,
+                              ),
+                              _buildNavItem(
+                                icon: Icons.home,
+                                label: '파티션 리포트',
+                                index: 2,
+                              ),
+                              _buildNavItem(
+                                icon: Icons.notifications,
+                                label: '게시판',
+                                index: 3,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
-                  backgroundOpacity: 0.005,
-                  showStroke: false,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildNavItem(
-                        icon: _currentIndex == 0
-                            ? Icons.calendar_today
-                            : Icons.calendar_today_outlined,
-                        label: '홈',
-                        index: 0,
+                  Positioned(
+                    top: -15,
+                    child: Container(
+                      width: 88,
+                      height: 69,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.3),
+                          width: 1,
+                        ),
+                        gradient: const RadialGradient(
+                          center: Alignment(-0.1477, -0.4783),
+                          radius: 3.2411,
+                          colors: [
+                            Color.fromRGBO(255, 255, 255, 0.15),
+                            Color.fromRGBO(255, 255, 255, 0.3),
+                          ],
+                          stops: [0.0, 1.0],
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color.fromRGBO(0, 0, 0, 0.25),
+                            offset: Offset(0, 4),
+                            blurRadius: 10,
+                          ),
+                        ],
                       ),
-                      _buildNavItem(
-                        icon: _currentIndex == 1
-                            ? Icons.inventory_2
-                            : Icons.inventory_2_outlined,
-                        label: '공용 소비',
-                        index: 1,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                          child: _glowAnimation != null
+                              ? AnimatedBuilder(
+                                  animation: _glowAnimation!,
+                                  builder: (context, _) {
+                                    final double glow = 0.7 + (_glowAnimation!.value * 0.3);
+                                    return Container(
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        gradient: RadialGradient(
+                                          center: const Alignment(0.0, 0.0),
+                                          radius: 0.85,
+                                          colors: [
+                                            Color.fromRGBO(255, 242, 215, 0.9 * glow),
+                                            Color.fromRGBO(251, 218, 158, 0.55 * glow),
+                                            Color.fromRGBO(77, 101, 119, 0.18),
+                                            Colors.transparent,
+                                          ],
+                                          stops: const [0.0, 0.35, 0.65, 1.0],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                )
+                              : Container(
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    gradient: RadialGradient(
+                                      center: const Alignment(0.0, 0.0),
+                                      radius: 0.85,
+                                      colors: [
+                                        Color.fromRGBO(255, 242, 215, 0.9),
+                                        Color.fromRGBO(251, 218, 158, 0.55),
+                                        Color.fromRGBO(77, 101, 119, 0.18),
+                                        Colors.transparent,
+                                      ],
+                                      stops: const [0.0, 0.35, 0.65, 1.0],
+                                    ),
+                                  ),
+                                ),
+                        ),
                       ),
-                      _buildNavItem(
-                        icon: Icons.home,
-                        label: '파티션 리포트',
-                        index: 2,
-                      ),
-                      _buildNavItem(
-                        icon: Icons.notifications,
-                        label: '게시판',
-                        index: 3,
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -198,5 +317,43 @@ class _PartitionMainScreenState extends State<PartitionMainScreen> {
       ),
     );
   }
+}
+
+class _BottomNavClipper extends CustomClipper<Path> {
+  const _BottomNavClipper();
+
+  @override
+  Path getClip(Size size) {
+    const double cornerRadius = 24;
+    const double notchRadius = 30;
+    const double notchWidth = 104;
+    const double notchHeight = 60;
+    const double notchOffset = 6; // how far below the top edge the notch dips
+
+    final Path base = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, 0, size.width, size.height),
+          const Radius.circular(cornerRadius),
+        ),
+      );
+
+    final Path notch = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(
+            center: Offset(size.width / 2, notchRadius + notchOffset - 40),
+            width: notchWidth,
+            height: notchHeight,
+          ),
+          const Radius.circular(notchRadius),
+        ),
+      );
+
+    return Path.combine(PathOperation.difference, base, notch);
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 

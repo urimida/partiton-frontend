@@ -28,8 +28,25 @@ class ApiException implements Exception {
             originalError: error,
           );
         case DioExceptionType.badResponse:
+          String errorMessage = '서버 오류가 발생했습니다.';
+          
+          // 에러 응답 데이터 안전하게 파싱
+          try {
+            final responseData = error.response?.data;
+            if (responseData is Map<String, dynamic>) {
+              errorMessage = responseData['message'] as String? ?? 
+                           responseData['error'] as String? ?? 
+                           '서버 오류가 발생했습니다.';
+            } else if (responseData is String) {
+              errorMessage = responseData;
+            }
+          } catch (e) {
+            // 파싱 실패 시 기본 메시지 사용
+            errorMessage = '서버 오류가 발생했습니다. (${error.response?.statusCode})';
+          }
+          
           return ApiException(
-            message: error.response?.data['message'] ?? '서버 오류가 발생했습니다.',
+            message: errorMessage,
             statusCode: error.response?.statusCode,
             originalError: error,
           );

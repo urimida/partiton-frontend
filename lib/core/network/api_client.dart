@@ -24,12 +24,28 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
-          // 토큰 추가
-          final token = await StorageService.getToken();
-          if (token != null) {
-            options.headers['Authorization'] = 'Bearer $token';
+          // 인증이 필요 없는 엔드포인트 목록
+          final publicEndpoints = [
+            AppConfig.loginEndpoint,
+            AppConfig.registerEndpoint,
+            AppConfig.kakaoLoginEndpoint,
+          ];
+          
+          // 공개 엔드포인트가 아닌 경우에만 토큰 추가
+          final isPublicEndpoint = publicEndpoints.any(
+            (endpoint) => options.path.contains(endpoint),
+          );
+          
+          if (!isPublicEndpoint) {
+            final token = await StorageService.getToken();
+            if (token != null) {
+              options.headers['Authorization'] = 'Bearer $token';
+            }
           }
+          
           _logger.d('Request: ${options.method} ${options.path}');
+          _logger.d('Request Data: ${options.data}');
+          _logger.d('Request Headers: ${options.headers}');
           return handler.next(options);
         },
         onResponse: (response, handler) {
@@ -38,6 +54,10 @@ class ApiClient {
         },
         onError: (error, handler) {
           _logger.e('Error: ${error.response?.statusCode} ${error.requestOptions.path}');
+          if (error.response != null) {
+            _logger.e('Error Response Data: ${error.response?.data}');
+            _logger.e('Error Response Headers: ${error.response?.headers}');
+          }
           return handler.next(error);
         },
       ),
@@ -95,6 +115,25 @@ class ApiClient {
       );
     } catch (e) {
       _logger.e('PUT Error: $e');
+      rethrow;
+    }
+  }
+
+  Future<Response> patch(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+  }) async {
+    try {
+      return await _dio.patch(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+      );
+    } catch (e) {
+      _logger.e('PATCH Error: $e');
       rethrow;
     }
   }
