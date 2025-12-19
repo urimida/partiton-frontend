@@ -4,6 +4,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:partition_app/core/router/app_router.dart';
 import 'package:partition_app/core/storage/storage_service.dart';
 import 'package:partition_app/shared/widgets/glassmorphism_button.dart';
+import 'package:partition_app/features/auth/services/auth_service.dart';
+import 'package:partition_app/shared/utils/debug_helper.dart';
 
 class EnterGroupCodeScreen extends StatefulWidget {
   const EnterGroupCodeScreen({super.key});
@@ -35,38 +37,69 @@ class _EnterGroupCodeScreenState extends State<EnterGroupCodeScreen> {
       _isSuccess = false;
     });
 
-    // TODO: 실제 그룹 코드 검증 API 호출
-    // 임시로 시뮬레이션
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      DebugHelper.log('그룹 참여 시도: $code');
+      
+      // 실제 그룹 참여 API 호출
+      final authService = AuthService();
+      final response = await authService.joinHousehold(inviteCode: code);
 
-    // 시뮬레이션: 다양한 결과 테스트
-    if (code == 'INVALID') {
-      setState(() {
-        _resultMessage = '해당 그룹 코드는 존재하지 않습니다.';
-        _isSuccess = false;
-        _isLoading = false;
-      });
-    } else if (code == 'FULL') {
-      setState(() {
-        _resultMessage = '해당 그룹은 이미 가득 찼습니다.';
-        _isSuccess = false;
-        _isLoading = false;
-      });
-    } else {
-      // 성공
-      setState(() {
-        _resultMessage = '그룹 코드 입력 완료';
-        _isSuccess = true;
-        _isLoading = false;
-      });
-
-      // 온보딩 완료 처리
-      await StorageService.setOnboardingCompleted(true);
-
-      // 성공 시 설문 화면으로 이동
-      await Future.delayed(const Duration(milliseconds: 500));
       if (mounted) {
-        Navigator.of(context).pushReplacementNamed(AppRouter.preferenceSurvey);
+        if (response.isSuccess) {
+          // 성공 시 householdId 저장
+          if (response.result?.id != null) {
+            await StorageService.setHouseholdId(response.result!.id.toString());
+            DebugHelper.log('그룹 참여 성공: householdId=${response.result!.id}');
+          }
+
+          setState(() {
+            _resultMessage = '그룹 참여가 완료되었습니다.';
+            _isSuccess = true;
+            _isLoading = false;
+          });
+
+          // 온보딩 완료 처리
+          await StorageService.setOnboardingCompleted(true);
+
+          // 성공 시 설문 화면으로 이동
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (mounted) {
+            Navigator.of(context).pushReplacementNamed(AppRouter.preferenceSurvey);
+          }
+        } else {
+          // API 응답에서 에러 메시지 표시
+          setState(() {
+            _resultMessage = response.message.isNotEmpty 
+                ? response.message 
+                : '그룹 참여에 실패했습니다.';
+            _isSuccess = false;
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      DebugHelper.log('그룹 참여 오류: $e');
+      
+      if (mounted) {
+        String errorMessage = '그룹 참여 중 오류가 발생했습니다.';
+        
+        // 에러 메시지에서 더 구체적인 정보 추출
+        final errorString = e.toString();
+        if (errorString.contains('404') || errorString.contains('존재하지')) {
+          errorMessage = '해당 그룹 코드는 존재하지 않습니다.';
+        } else if (errorString.contains('400') || errorString.contains('잘못된')) {
+          errorMessage = '잘못된 그룹 코드입니다.';
+        } else if (errorString.contains('403') || errorString.contains('권한')) {
+          errorMessage = '그룹 참여 권한이 없습니다.';
+        } else if (errorString.contains('409') || errorString.contains('이미')) {
+          errorMessage = '이미 해당 그룹에 참여 중입니다.';
+        }
+        
+        setState(() {
+          _resultMessage = errorMessage;
+          _isSuccess = false;
+          _isLoading = false;
+        });
       }
     }
   }

@@ -1,27 +1,34 @@
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
 import 'package:partition_app/features/partition/services/calendar_service.dart';
 import 'package:partition_app/features/partition/models/calendar_response_model.dart';
 import 'package:partition_app/features/partition/models/daily_calendar_response_model.dart';
 import 'package:partition_app/core/network/api_exception.dart';
+import 'package:partition_app/core/storage/storage_service.dart';
+import 'package:partition_app/features/auth/services/auth_service.dart';
+import 'package:partition_app/features/auth/providers/auth_provider.dart';
 
 /// 홈 화면용 캘린더 위젯
 /// 글래스모피즘 효과가 적용된 커스텀 캘린더
 class HomeCalendarWidget extends StatefulWidget {
   final ValueChanged<DateTime>? onDateSelected;
+  final GlobalKey<HomeCalendarWidgetState>? refreshKey; // 외부에서 갱신하기 위한 키
   
   const HomeCalendarWidget({
     super.key,
     this.onDateSelected,
+    this.refreshKey,
   });
 
   @override
-  State<HomeCalendarWidget> createState() => _HomeCalendarWidgetState();
+  State<HomeCalendarWidget> createState() => HomeCalendarWidgetState();
 }
 
-class _HomeCalendarWidgetState extends State<HomeCalendarWidget> {
+/// HomeCalendarWidget의 State를 public으로 노출 (외부에서 refreshCalendar 호출 가능)
+class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
   DateTime _selectedDate = DateTime.now();
   DateTime _currentMonth = DateTime.now();
   DateTime? _detailDate;
@@ -54,23 +61,35 @@ class _HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       
       if (item.category.toUpperCase() == 'CHORE') {
         eventType = CalendarEventType.chore;
-        description = item.title;
+        // 작성자 이름을 앞에 표시
         if (item.assigneeName != null && item.assigneeName!.isNotEmpty) {
-          description += ' (담당: ${item.assigneeName})';
+          description = '${item.assigneeName} · ${item.title}';
+        } else {
+          description = item.title;
         }
         if (item.isCompleted) {
           description += ' ✓';
         }
       } else if (item.category.toUpperCase() == 'SCHEDULE') {
         eventType = CalendarEventType.memo;
-        description = item.title;
+        // 작성자 이름을 앞에 표시
+        if (item.assigneeName != null && item.assigneeName!.isNotEmpty) {
+          description = '${item.assigneeName} · ${item.title}';
+        } else {
+          description = item.title;
+        }
         if (item.isCompleted) {
           description += ' ✓';
         }
       } else {
         // 기본값 (공과금 등)
         eventType = CalendarEventType.bill;
-        description = item.title;
+        // 작성자 이름을 앞에 표시
+        if (item.assigneeName != null && item.assigneeName!.isNotEmpty) {
+          description = '${item.assigneeName} · ${item.title}';
+        } else {
+          description = item.title;
+        }
       }
       
       return _CalendarEvent(
@@ -78,15 +97,30 @@ class _HomeCalendarWidgetState extends State<HomeCalendarWidget> {
         description,
         id: item.id,
         category: item.category,
+        assigneeName: item.assigneeName,
       );
     }).toList();
   }
 
-  Future<void> _loadCalendarData(int year, int month) async {
+  /// 캘린더 데이터 강제 갱신 (외부에서 호출 가능)
+  void refreshCalendar() {
+    // 캐시 무효화
+    _cachedMonthKey = null;
+    _cachedEvents = null;
+    _cachedDailyEvents = null; // 모든 일간 캐시 무효화
+    
+    // 데이터 재로드 (강제 갱신)
+    _loadCalendarData(_currentMonth.year, _currentMonth.month, forceRefresh: true);
+    if (_detailDate != null) {
+      _loadDailyCalendarData(_detailDate!, forceRefresh: true);
+    }
+  }
+
+  Future<void> _loadCalendarData(int year, int month, {bool forceRefresh = false}) async {
     final monthKey = '$year-${month.toString().padLeft(2, '0')}';
     
-    // 이미 같은 월의 데이터가 캐시되어 있으면 다시 로드하지 않음
-    if (_cachedMonthKey == monthKey && _cachedEvents != null) {
+    // 강제 갱신이 아니고 이미 같은 월의 데이터가 캐시되어 있으면 다시 로드하지 않음
+    if (!forceRefresh && _cachedMonthKey == monthKey && _cachedEvents != null) {
       return;
     }
 
@@ -188,11 +222,11 @@ class _HomeCalendarWidgetState extends State<HomeCalendarWidget> {
   }
 
   /// 일간 캘린더 상세 조회
-  Future<void> _loadDailyCalendarData(DateTime date) async {
+  Future<void> _loadDailyCalendarData(DateTime date, {bool forceRefresh = false}) async {
     final dateKey = _dateKey(date);
     
-    // 이미 같은 날짜의 데이터가 캐시되어 있으면 다시 로드하지 않음
-    if (_cachedDailyDateKey == dateKey && _cachedDailyEvents != null && _cachedDailyEvents![dateKey] != null) {
+    // 강제 갱신이 아니고 이미 같은 날짜의 데이터가 캐시되어 있으면 다시 로드하지 않음
+    if (!forceRefresh && _cachedDailyDateKey == dateKey && _cachedDailyEvents != null && _cachedDailyEvents![dateKey] != null) {
       return;
     }
 
@@ -400,17 +434,49 @@ class _HomeCalendarWidgetState extends State<HomeCalendarWidget> {
             ),
             // 선택된 날짜의 이벤트 목록 (스크롤 가능) - 날짜 바로 아래부터 확장
             if (_detailDate != null) ...[
-              const SizedBox(height: 4),
               Expanded(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: _isLoadingDaily
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _isLoadingDaily
+                        ? const Expanded(
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            ),
+                          )
+                        : Expanded(
+                            child: Builder(
+                              builder: (context) {
+                                // Provider에서 사용자 정보 가져오기
+                                final authProvider = Provider.of<AuthProvider>(context, listen: false);
+                                final providerUserName = authProvider.user?.name;
+                                
+                                debugPrint('📋 이벤트 목록 빌드 시작');
+                                debugPrint('  - Provider 사용자: ${authProvider.user?.name}');
+                                
+                                return FutureBuilder<String?>(
+                                  future: _getCurrentUserName(context, providerUserName),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState == ConnectionState.waiting) {
+                                      return const Center(
+                                        child: CircularProgressIndicator(
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        ),
+                                      );
+                                    }
+                                    
+                                    final userName = snapshot.data;
+                                    debugPrint('📋 FutureBuilder 완료 - 사용자 이름: $userName');
+                                    
+                                    return _buildEventList(_detailDate!, userName);
+                                  },
+                                );
+                              },
+                            ),
                           ),
-                        )
-                      : _buildEventList(_detailDate!),
+                  ],
                 ),
               ),
             ],
@@ -523,8 +589,69 @@ class _HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     return '${weekdays[date.weekday % 7]} · ${date.month}/${date.day}';
   }
 
+  /// 현재 사용자 이름 가져오기 (여러 소스 확인)
+  Future<String?> _getCurrentUserName(BuildContext context, String? providerUserName) async {
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('🔍 사용자 이름 조회 시작');
+    debugPrint('  - Provider 사용자 이름: $providerUserName');
+    
+    // 1. Provider에서 사용자 정보 확인 (이미 전달받음)
+    if (providerUserName != null && providerUserName.isNotEmpty) {
+      debugPrint('✅ [1단계] Provider에서 사용자 이름 가져옴: "$providerUserName"');
+      await StorageService.setUserName(providerUserName);
+      debugPrint('  → 로컬 스토리지에 저장 완료');
+      debugPrint('═══════════════════════════════════════════════════════');
+      return providerUserName;
+    }
+    debugPrint('  → Provider에 사용자 이름 없음');
+    
+    // 2. 로컬 스토리지에서 먼저 확인 (서버 에러가 발생할 수 있으므로)
+    debugPrint('  - [2단계] 로컬 스토리지 확인 중...');
+    final localUserName = await StorageService.getUserName();
+    debugPrint('  - 로컬 스토리지 사용자 이름: $localUserName');
+    if (localUserName != null && localUserName.isNotEmpty) {
+      debugPrint('✅ [2단계] 로컬 스토리지에서 사용자 이름 가져옴: "$localUserName"');
+      debugPrint('═══════════════════════════════════════════════════════');
+      return localUserName;
+    }
+    debugPrint('  → 로컬 스토리지에 사용자 이름 없음');
+    
+    // 3. 서버에서 사용자 정보 조회 시도 (로컬에 없을 때만)
+    debugPrint('  - [3단계] 서버에서 사용자 정보 조회 시도...');
+    try {
+      final authService = AuthService();
+      final userInfo = await authService.getUserInfo();
+      if (userInfo?.name != null && userInfo!.name!.isNotEmpty) {
+        debugPrint('✅ [3단계] 서버에서 사용자 이름 가져옴: "${userInfo.name}"');
+        // 서버에서 가져온 이름을 로컬에도 저장
+        await StorageService.setUserName(userInfo.name!);
+        debugPrint('  → 로컬 스토리지에 저장 완료');
+        debugPrint('═══════════════════════════════════════════════════════');
+        return userInfo.name;
+      } else {
+        debugPrint('⚠️ [3단계] 서버에서 사용자 정보는 가져왔지만 이름이 null 또는 비어있음');
+      }
+    } catch (e) {
+      debugPrint('❌ [3단계] 서버에서 사용자 정보 조회 실패: $e');
+      debugPrint('  → 서버 에러로 인해 사용자 정보를 가져올 수 없음');
+    }
+    
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('⚠️⚠️⚠️ 사용자 이름을 찾을 수 없습니다! ⚠️⚠️⚠️');
+    debugPrint('  - Provider: $providerUserName');
+    debugPrint('  - 로컬 스토리지: $localUserName');
+    debugPrint('  - 서버: 실패 또는 null');
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('💡 해결 방법:');
+    debugPrint('  1. 온보딩 화면에서 이름을 입력했는지 확인');
+    debugPrint('  2. 앱을 재시작하여 로컬 스토리지 확인');
+    debugPrint('  3. 서버의 /users/me API가 정상 작동하는지 확인');
+    debugPrint('═══════════════════════════════════════════════════════');
+    return null;
+  }
+
   /// 이벤트 목록 위젯 생성
-  Widget _buildEventList(DateTime date) {
+  Widget _buildEventList(DateTime date, String? currentUserName) {
     final dateKey = _dateKey(date);
     final dailyItems = _getDailyEvents(dateKey);
     
@@ -545,22 +672,52 @@ class _HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       );
     }
     
+    // 현재 사용자 이름 정규화 (공백 제거, trim)
+    final normalizedCurrentUserName = currentUserName?.trim();
+    
+    // 디버깅: 현재 사용자 이름과 이벤트 작성자 이름 로그
+    if (normalizedCurrentUserName != null) {
+      debugPrint('현재 사용자 이름: "$normalizedCurrentUserName"');
+    }
+    
     return ListView(
       shrinkWrap: false,
-      padding: EdgeInsets.zero,
+      padding: const EdgeInsets.only(top: 0),
       children: events.map(
-        (event) => Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _EventChip(
-            event: event,
-            onDelete: event.id != null && event.category?.toUpperCase() == 'SCHEDULE'
-                ? () => _handleDeleteSchedule(event.id!, date)
-                : null,
-            onEdit: event.id != null && event.category?.toUpperCase() == 'SCHEDULE'
-                ? () => _handleEditSchedule(event.id!, event.description, date)
-                : null,
-          ),
-        ),
+        (event) {
+          // 작성자 확인: SCHEDULE 카테고리이고, 작성자 이름이 현재 사용자와 일치하는지 확인
+          final isSchedule = event.category?.toUpperCase() == 'SCHEDULE';
+          final eventAuthorName = event.assigneeName?.trim();
+          
+          // 디버깅: 각 이벤트의 작성자 이름 로그
+          if (isSchedule) {
+            debugPrint('일정 ID: ${event.id}, 작성자: "$eventAuthorName", 현재 사용자: "$normalizedCurrentUserName"');
+          }
+          
+          final isMySchedule = isSchedule && 
+                              eventAuthorName != null && 
+                              eventAuthorName.isNotEmpty &&
+                              normalizedCurrentUserName != null &&
+                              eventAuthorName == normalizedCurrentUserName;
+          
+          if (isSchedule) {
+            debugPrint('일정 ID: ${event.id}, 내 일정인가? $isMySchedule');
+          }
+          
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _EventChip(
+              event: event,
+              // 내가 작성한 일정만 수정/삭제 가능
+              onDelete: event.id != null && isMySchedule
+                  ? () => _handleDeleteSchedule(event.id!, date)
+                  : null,
+              onEdit: event.id != null && isMySchedule
+                  ? () => _handleEditSchedule(event.id!, event.description, date)
+                  : null,
+            ),
+          );
+        },
       ).toList(),
     );
   }
@@ -615,7 +772,18 @@ class _HomeCalendarWidgetState extends State<HomeCalendarWidget> {
   }
 
   Future<void> _handleEditSchedule(int scheduleId, String currentContent, DateTime date) async {
-    final TextEditingController controller = TextEditingController(text: currentContent);
+    // 작성자 이름 제거 (형식: "작성자이름 · 제목" 또는 "제목")
+    String titleOnly = currentContent;
+    if (currentContent.contains(' · ')) {
+      final parts = currentContent.split(' · ');
+      if (parts.length > 1) {
+        titleOnly = parts.sublist(1).join(' · ');
+      }
+    }
+    // 완료 표시 제거
+    titleOnly = titleOnly.replaceAll(' ✓', '').trim();
+    
+    final TextEditingController controller = TextEditingController(text: titleOnly);
     DateTime selectedDate = date;
     
     final result = await showDialog<Map<String, dynamic>>(
@@ -1160,12 +1328,14 @@ class _CalendarEvent {
   final String description;
   final int? id;
   final String? category;
+  final String? assigneeName;
 
   const _CalendarEvent(
     this.type, 
     this.description, {
     this.id,
     this.category,
+    this.assigneeName,
   });
 }
 

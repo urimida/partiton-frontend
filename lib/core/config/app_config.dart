@@ -14,6 +14,7 @@ class AppConfig {
   static const String partitionsEndpoint = '/partitions';
   static const String partitionDetailEndpoint = '/partitions/{id}';
   static const String householdsEndpoint = '/households';
+  static const String householdsJoinEndpoint = '/households/join';
   static const String updateUserNameEndpoint = '/users/me';
   static const String userPreferencesEndpoint = '/users/me/preferences';
   static const String monthlyCalendarEndpoint = '/calendars/monthly';

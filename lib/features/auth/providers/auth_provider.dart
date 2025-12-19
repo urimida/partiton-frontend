@@ -3,6 +3,7 @@ import 'package:partition_app/features/auth/models/user_model.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/shared/utils/debug_helper.dart';
+import 'package:partition_app/core/storage/storage_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -67,6 +68,30 @@ class AuthProvider extends ChangeNotifier {
         DebugHelper.log('Access Token 만료 시간: ${kakaoAuthResponse.result!.accessTokenExpiresIn}ms');
         userRole = kakaoAuthResponse.result!.userRole;
         DebugHelper.log('User Role: $userRole');
+      }
+      
+      // 로그인 성공 후 서버에서 사용자 정보 가져오기
+      try {
+        final userInfo = await _authService.getUserInfo();
+        if (userInfo != null) {
+          _user = userInfo;
+          DebugHelper.log('✅ 사용자 정보 가져오기 성공');
+          DebugHelper.log('사용자 이름: ${userInfo.name}');
+          DebugHelper.log('사용자 이메일: ${userInfo.email}');
+          
+          // 사용자 이름을 로컬 스토리지에 저장
+          if (userInfo.name != null && userInfo.name!.isNotEmpty) {
+            await StorageService.setUserName(userInfo.name!);
+            DebugHelper.log('✅ 사용자 이름 로컬 스토리지에 저장: ${userInfo.name}');
+          }
+          
+          notifyListeners();
+        } else {
+          DebugHelper.log('⚠️ 사용자 정보가 null입니다');
+        }
+      } catch (e) {
+        DebugHelper.log('⚠️ 사용자 정보 가져오기 실패 (계속 진행): $e');
+        // 사용자 정보 가져오기 실패해도 로그인은 성공으로 처리
       }
       
       _setLoading(false);

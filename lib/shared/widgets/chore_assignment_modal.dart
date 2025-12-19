@@ -6,7 +6,12 @@ import 'package:partition_app/shared/widgets/glassmorphism_widget.dart';
 
 /// 집안일 자동 배정 모달
 class ChoreAssignmentModal extends StatefulWidget {
-  const ChoreAssignmentModal({super.key});
+  final VoidCallback? onSuccess; // 배정 성공 시 호출될 콜백
+  
+  const ChoreAssignmentModal({
+    super.key,
+    this.onSuccess,
+  });
 
   @override
   State<ChoreAssignmentModal> createState() => _ChoreAssignmentModalState();
@@ -41,6 +46,27 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
     '화장실 청소',
     '냉장고 청소',
   ];
+  
+  /// 집안일 이름을 서버가 기대하는 형식으로 변환
+  /// 이미지의 API 명세에 따르면 서버는 집안일 이름을 받을 수 있음
+  /// 예: "설거지" -> "설거지 하기" 또는 그대로 "설거지"
+  List<String> _convertChoreNamesForApi(List<String> choreNames) {
+    // 집안일 이름 매핑 (프론트엔드 이름 -> 서버가 기대하는 이름)
+    final nameMapping = {
+      '설거지': '설거지 하기',
+      '요리': '요리 하기',
+      '빨래': '빨래 하기',
+      '음식물 쓰레기 버리기': '음식물 쓰레기 버리기',
+      '분리수거': '재활용 쓰레기 버리기',
+      '청소기 돌리기': '청소기 돌리기',
+      '바닥 닦기': '바닥 닦기',
+      '창문, 창틀 닦기': '창문, 창틀 닦기',
+      '화장실 청소': '화장실 청소하기',
+      '냉장고 청소': '냉장고 청소하기',
+    };
+    
+    return choreNames.map((name) => nameMapping[name] ?? name).toList();
+  }
 
   String _formatDateForApi(DateTime date) {
     return '${date.year.toString().padLeft(4, '0')}-'
@@ -51,6 +77,17 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
   Future<void> _handleAutoAssign() async {
     if (_isLoading) return;
 
+    // 선택된 집안일이 없으면 경고
+    if (_selectedChores.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('배정할 집안일을 선택해주세요.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
@@ -58,15 +95,35 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
     try {
       final start = _formatDateForApi(_startDate);
       final end = _formatDateForApi(_endDate);
+      final selectedChoresList = _selectedChores.toList();
+      
+      // 집안일 이름을 서버가 기대하는 형식으로 변환
+      final convertedChoreNames = _convertChoreNamesForApi(selectedChoresList);
+      
+      // 디버깅: 선택된 집안일 확인
+      debugPrint('═══════════════════════════════════════════════════════');
+      debugPrint('🏠 집안일 자동 배정 요청');
+      debugPrint('  - 시작일: $start');
+      debugPrint('  - 종료일: $end');
+      debugPrint('  - 선택된 집안일 개수: ${selectedChoresList.length}');
+      debugPrint('  - 선택된 집안일 목록 (원본): $selectedChoresList');
+      debugPrint('  - 변환된 집안일 목록 (API 전송용): $convertedChoreNames');
+      debugPrint('  - 전체 집안일 목록: $_allChores');
+      debugPrint('═══════════════════════════════════════════════════════');
 
       await _choreService.autoAssignChores(
         startDate: start,
         endDate: end,
+        selectedChores: convertedChoreNames, // 변환된 집안일 목록 전달
       );
 
       if (!mounted) return;
 
       Navigator.of(context).pop();
+      
+      // 콜백 호출하여 캘린더 갱신
+      widget.onSuccess?.call();
+      
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('집안일 자동 배정이 완료되었어요.'),
@@ -741,13 +798,40 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
       alignment: Alignment.center,
       insetPadding: const EdgeInsets.symmetric(horizontal: 32),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 300),
-        child: GlassmorphismWidget(
+        constraints: const BoxConstraints(
+          maxWidth: 280,
+          maxHeight: 360, // 전체 다이얼로그 높이 제한 (320 → 360)
+        ),
+        child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
-          backgroundOpacity: 0.002,
-          borderColor: Colors.white.withOpacity(0.06),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Column(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white,
+                  width: 0.5,
+                ),
+                gradient: const RadialGradient(
+                  center: Alignment(-0.1212, -0.1178),
+                  radius: 1.7145,
+                  colors: [
+                    Color.fromRGBO(255, 255, 255, 0.10),
+                    Color.fromRGBO(255, 255, 255, 0.15),
+                  ],
+                  stops: [0.0, 1.0],
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color.fromRGBO(255, 255, 255, 0.25),
+                    offset: Offset(4, 4),
+                    blurRadius: 30,
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16), // 패딩 증가 (horizontal: 12→16, vertical: 8→16)
+              child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // 헤더
@@ -759,19 +843,19 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                     child: GestureDetector(
                       onTap: _canGoPrevious() ? _previousMonth : null,
                       child: Container(
-                        width: 30,
-                        height: 30,
+                        width: 24,
+                        height: 24,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.08),
-                            width: 0.4,
+                            color: Colors.white.withOpacity(0.15),
+                            width: 0.5,
                           ),
                         ),
                         child: Icon(
                           Icons.chevron_left,
                           color: Colors.white.withOpacity(0.95),
-                          size: 18,
+                          size: 16,
                         ),
                       ),
                     ),
@@ -780,7 +864,7 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                     _getMonthYearText(),
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.95),
-                      fontSize: 15,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
                       fontFamily: 'Pretendard Variable',
                     ),
@@ -790,26 +874,26 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                     child: GestureDetector(
                       onTap: _canGoNext() ? _nextMonth : null,
                       child: Container(
-                        width: 30,
-                        height: 30,
+                        width: 24,
+                        height: 24,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.08),
-                            width: 0.4,
+                            color: Colors.white.withOpacity(0.15),
+                            width: 0.5,
                           ),
                         ),
                         child: Icon(
                           Icons.chevron_right,
                           color: Colors.white.withOpacity(0.95),
-                          size: 18,
+                          size: 16,
                         ),
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 10), // 간격 증가 (6 → 10)
               // 요일 헤더
               Row(
                 children: weekdays.map((day) {
@@ -819,7 +903,7 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                         day,
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.95),
-                          fontSize: 10,
+                          fontSize: 9,
                           fontWeight: FontWeight.w500,
                           fontFamily: 'Pretendard Variable',
                         ),
@@ -828,16 +912,20 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                   );
                 }).toList(),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8), // 간격 증가 (4 → 8)
               // 날짜 그리드
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 7,
-                childAspectRatio: 1.5,
-                ),
-                itemCount: 35,
+              SizedBox(
+                height: 160, // GridView 높이 명시적으로 제한 (180 → 160)
+                child: GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 7,
+                  childAspectRatio: 1.8, // 셀을 더 넓고 낮게 만들어 캘린더 높이 감소 (1.4 → 1.8)
+                  mainAxisSpacing: 0.5, // 간격 더 줄임 (1 → 0.5)
+                  crossAxisSpacing: 0.5, // 간격 더 줄임 (1 → 0.5)
+                  ),
+                  itemCount: 35,
                 itemBuilder: (context, index) {
                   final date = days[index];
                   final isCurrentMonth = date.month == _currentMonth.month;
@@ -850,14 +938,14 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                   return GestureDetector(
                     onTap: () => _selectDate(date),
                     child: Container(
-                      margin: const EdgeInsets.all(1),
+                      margin: const EdgeInsets.all(0.25), // 마진 줄임 (0.5 → 0.25)
                       child: isSelected
                           ? Container(
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(6),
-                                color: Colors.white.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(4),
+                                color: Colors.white.withOpacity(0.15),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.25),
+                                  color: Colors.white.withOpacity(0.3),
                                   width: 0.8,
                                 ),
                               ),
@@ -866,7 +954,7 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                                   '${date.day}',
                                   style: TextStyle(
                                     color: Colors.white.withOpacity(0.95),
-                                    fontSize: 12,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w600,
                                     fontFamily: 'Pretendard Variable',
                                   ),
@@ -875,10 +963,10 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                             )
                           : Container(
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(6),
+                                borderRadius: BorderRadius.circular(4),
                                 border: isToday
                                     ? Border.all(
-                                        color: Colors.white.withOpacity(0.25),
+                                        color: Colors.white.withOpacity(0.3),
                                         width: 0.8,
                                       )
                                     : null,
@@ -890,7 +978,7 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                                     color: isCurrentMonth && isSelectable
                                         ? Colors.white.withOpacity(0.95)
                                         : Colors.white.withOpacity(0.4),
-                                    fontSize: 12,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w400,
                                     fontFamily: 'Pretendard Variable',
                                   ),
@@ -900,8 +988,9 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                     ),
                   );
                 },
+                ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 8), // 간격 증가 (4 → 8)
               // 버튼
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -909,43 +998,43 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), // 위아래 패딩 줄임 (5 → 4)
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.08),
-                        width: 0.4,
+                        color: Colors.white.withOpacity(0.15),
+                        width: 0.5,
                       ),
                     ),
                     child: Text(
                       '취소',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.95),
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: FontWeight.w400,
                         fontFamily: 'Pretendard Variable',
                       ),
                     ),
                   ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(_selectedDate),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), // 위아래 패딩 줄임 (5 → 4)
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      color: Colors.white.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.white.withOpacity(0.08), // 더 투명하게 (0.1 → 0.08)
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.12),
-                        width: 0.4,
+                        color: Colors.white.withOpacity(0.2),
+                        width: 0.5,
                       ),
                     ),
                     child: Text(
                       '확인',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.95),
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: FontWeight.w600,
                         fontFamily: 'Pretendard Variable',
                       ),
@@ -955,6 +1044,8 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                 ],
               ),
             ],
+              ),
+            ),
           ),
         ),
       ),

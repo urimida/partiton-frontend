@@ -7,10 +7,12 @@ import 'package:partition_app/core/network/api_exception.dart';
 /// 일정 등록 모달
 class ScheduleRegistrationModal extends StatefulWidget {
   final DateTime selectedDate;
+  final VoidCallback? onSuccess; // 등록 성공 시 호출될 콜백
   
   const ScheduleRegistrationModal({
     super.key,
     required this.selectedDate,
+    this.onSuccess,
   });
 
   @override
@@ -75,6 +77,10 @@ class _ScheduleRegistrationModalState extends State<ScheduleRegistrationModal> {
 
       // 등록 성공 시 모달 닫기
       Navigator.of(context).pop();
+      
+      // 콜백 호출하여 캘린더 갱신
+      widget.onSuccess?.call();
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${_formatDate(widget.selectedDate)} 일정이 등록되었습니다.'),

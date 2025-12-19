@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import 'package:partition_app/core/config/app_config.dart';
 import 'package:partition_app/core/network/api_client.dart';
 import 'package:partition_app/core/network/api_exception.dart';
@@ -132,6 +134,24 @@ class AuthService {
     }
   }
 
+  /// 그룹(가구) 참여
+  Future<HouseholdResponseModel> joinHousehold({
+    required String inviteCode,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        AppConfig.householdsJoinEndpoint,
+        data: {
+          'inviteCode': inviteCode,
+        },
+      );
+
+      return HouseholdResponseModel.fromJson(response.data);
+    } catch (e) {
+      throw ApiException.fromDioError(e);
+    }
+  }
+
   /// 선호도 등록
   Future<PreferenceResponseModel> registerPreferences({
     required List<PreferenceItem> preferences,
@@ -163,28 +183,58 @@ class AuthService {
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
         
+        debugPrint('📥 /users/me API 응답 받음:');
+        debugPrint('  - isSuccess: ${data['isSuccess']}');
+        debugPrint('  - 전체 응답: $data');
+        
         // isSuccess가 false인 경우 null 반환
         if (data['isSuccess'] == false) {
+          debugPrint('  ⚠️ isSuccess가 false입니다');
           return null;
         }
         
         if (data['result'] != null) {
           final result = data['result'];
+          debugPrint('  - result 타입: ${result.runtimeType}');
+          
           if (result is Map<String, dynamic>) {
-            return UserModel.fromJson(result);
+            debugPrint('  - result 내용: $result');
+            debugPrint('  - result에 id 있음: ${result.containsKey('id')}');
+            debugPrint('  - result에 email 있음: ${result.containsKey('email')}');
+            debugPrint('  - result에 name 있음: ${result.containsKey('name')}');
+            debugPrint('  - result의 name 값: ${result['name']}');
+            
+            final userModel = UserModel.fromJson(result);
+            debugPrint('  ✅ UserModel 생성 성공');
+            debugPrint('    - id: ${userModel.id}');
+            debugPrint('    - email: ${userModel.email}');
+            debugPrint('    - name: ${userModel.name}');
+            
+            return userModel;
           }
         }
         // result가 없으면 직접 UserModel로 변환 시도
+        debugPrint('  ⚠️ result가 없거나 Map이 아닙니다. 직접 변환 시도...');
         try {
-          return UserModel.fromJson(data);
-        } catch (_) {
+          debugPrint('  - 직접 변환 시도: $data');
+          final userModel = UserModel.fromJson(data);
+          debugPrint('  ✅ 직접 변환 성공');
+          return userModel;
+        } catch (e) {
+          debugPrint('  ❌ 직접 변환 실패: $e');
           return null;
         }
       }
+      debugPrint('  ❌ 응답이 Map이 아닙니다: ${response.data.runtimeType}');
       return null;
     } catch (e) {
       // 서버 에러(500 등) 발생 시 null 반환 (로컬 스토리지 fallback 사용)
       // 예외를 던지지 않고 조용히 실패 처리
+      debugPrint('❌ /users/me API 호출 실패: $e');
+      if (e is DioException && e.response != null) {
+        debugPrint('  - 에러 응답 상태 코드: ${e.response!.statusCode}');
+        debugPrint('  - 에러 응답 데이터: ${e.response!.data}');
+      }
       return null;
     }
   }

@@ -124,8 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
         DebugHelper.log('⚠️ 사용자 정보 조회 실패');
       }
 
-      // TODO: 카카오 로그인 성공 후 서비스 로그인 처리
-      // 현재는 더미 사용자로 로그인 처리
+      // 카카오 로그인 성공 후 서비스 로그인 처리
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         

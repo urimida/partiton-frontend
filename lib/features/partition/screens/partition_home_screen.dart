@@ -14,11 +14,16 @@ class PartitionHomeScreen extends StatefulWidget {
 
 class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
   DateTime _selectedDate = DateTime.now();
+  final GlobalKey<HomeCalendarWidgetState> _calendarKey = GlobalKey<HomeCalendarWidgetState>();
 
   void _onDateSelected(DateTime date) {
     setState(() {
       _selectedDate = date;
     });
+  }
+
+  void _refreshCalendar() {
+    _calendarKey.currentState?.refreshCalendar();
   }
 
   void _showScheduleRegistrationModal(BuildContext context) {
@@ -27,6 +32,7 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => ScheduleRegistrationModal(
         selectedDate: _selectedDate,
+        onSuccess: _refreshCalendar, // 등록 성공 시 캘린더 갱신
       ),
     );
   }
@@ -35,7 +41,9 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
     showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => const ChoreAssignmentModal(),
+      builder: (context) => ChoreAssignmentModal(
+        onSuccess: _refreshCalendar, // 배정 성공 시 캘린더 갱신
+      ),
     );
   }
 
@@ -63,6 +71,7 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
               width: double.infinity,
               height: 382,
               child: HomeCalendarWidget(
+                key: _calendarKey,
                 onDateSelected: _onDateSelected,
               ),
             ),
