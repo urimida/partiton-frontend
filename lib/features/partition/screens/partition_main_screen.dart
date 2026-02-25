@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui';
 import 'package:partition_app/features/partition/screens/partition_home_screen.dart';
 import 'package:partition_app/features/partition/screens/partition_shared_expense_screen.dart';
@@ -75,7 +74,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
           ),
         ),
         Scaffold(
-          appBar: isHomeScreen
+          appBar: (isHomeScreen || _currentIndex == 1)
               ? null
               : AppBar(
                   title: Text(_titles[_currentIndex]),
@@ -85,14 +84,16 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
           backgroundColor: Colors.transparent,
           extendBody: true,
           extendBodyBehindAppBar: true,
-          body: Padding(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top +
-                  (isHomeScreen ? 0 : kToolbarHeight),
-              bottom: 140, // 네비게이션 바 높이만큼 하단 패딩
-            ),
-            child: _screens[_currentIndex],
-          ),
+          body: _currentIndex == 1
+              ? _screens[_currentIndex] // 공용 소비 화면은 padding 없이
+              : Padding(
+                  padding: EdgeInsets.only(
+                    top: MediaQuery.of(context).padding.top +
+                        (isHomeScreen ? 0 : kToolbarHeight),
+                    bottom: 140, // 네비게이션 바 높이만큼 하단 패딩
+                  ),
+                  child: _screens[_currentIndex],
+                ),
           bottomNavigationBar: SafeArea(
             top: false,
             bottom: false,
@@ -247,7 +248,6 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
     required IconData? icon,
     required String label,
     required int index,
-    String? svgAsset,
   }) {
     final isSelected = _currentIndex == index;
     
@@ -262,47 +262,12 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // SVG 아이콘이 있으면 SVG 사용, 없으면 Material Icon 사용
-            if (svgAsset != null)
-              Builder(
-                builder: (context) {
-                  try {
-                    return SvgPicture.asset(
-                      svgAsset,
-                      width: 24,
-                      height: 24,
-                      colorFilter: ColorFilter.mode(
-                        isSelected ? Colors.white : AppColors.mainNavy,
-                        BlendMode.srcIn,
-                      ),
-                      placeholderBuilder: (context) => Icon(
-                        Icons.error_outline,
-                        color: isSelected ? Colors.white : AppColors.mainNavy,
-                        size: 24,
-                      ),
-                    );
-                  } catch (e) {
-                    // SVG 로드 실패 시 대체 아이콘 표시
-                    return Icon(
-                      Icons.error_outline,
-                      color: isSelected ? Colors.white : AppColors.mainNavy,
-                      size: 24,
-                    );
-                  }
-                },
-              )
-            else if (icon != null)
-              isSelected
-                  ? Icon(
-                      icon,
-                      color: Colors.white,
-                      size: 24,
-                    )
-                  : Icon(
-                      icon,
-                      color: AppColors.mainNavy,
-                      size: 24,
-                    ),
+            if (icon != null)
+              Icon(
+                icon,
+                color: isSelected ? Colors.white : AppColors.mainNavy,
+                size: 24,
+              ),
             const SizedBox(height: 4),
             Text(
               label,

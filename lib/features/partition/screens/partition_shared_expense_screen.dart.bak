@@ -1,0 +1,30 @@
+import 'package:flutter/material.dart';
+
+class PartitionSharedExpenseScreen extends StatelessWidget {
+  const PartitionSharedExpenseScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.transparent,
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.receipt_long, size: 64, color: Colors.green),
+            SizedBox(height: 16),
+            Text(
+              '공용소비 화면',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+      child: Column(
+      ),
+    );
+  }
+}
+

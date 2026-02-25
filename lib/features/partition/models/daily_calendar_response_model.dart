@@ -31,6 +31,7 @@ class DailyCalendarItem {
   final String title;
   final String? assigneeName;
   final bool isCompleted;
+  final bool? isOwner;
 
   DailyCalendarItem({
     required this.category,
@@ -38,6 +39,7 @@ class DailyCalendarItem {
     required this.title,
     this.assigneeName,
     required this.isCompleted,
+    this.isOwner,
   });
 
   factory DailyCalendarItem.fromJson(Map<String, dynamic> json) =>
@@ -45,6 +47,7 @@ class DailyCalendarItem {
 
   Map<String, dynamic> toJson() => _$DailyCalendarItemToJson(this);
 }
+
 
 
 

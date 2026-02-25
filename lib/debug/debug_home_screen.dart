@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:partition_app/core/router/app_router.dart';
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
+import 'package:partition_app/core/storage/storage_service.dart';
 import 'package:provider/provider.dart';
 
 /// 개발용 디버그 메뉴 화면
@@ -70,15 +71,35 @@ class DebugHomeScreen extends StatelessWidget {
             leading: const Icon(Icons.person, color: Colors.blue),
             title: const Text('더미 유저로 로그인'),
             subtitle: const Text('로그인 없이 인증된 상태로 전환'),
-            onTap: () {
+            onTap: () async {
               final authProvider = context.read<AuthProvider>();
+              
+              // 더미 유저 설정
               authProvider.setMockUserForDebug();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('✅ 더미 유저로 로그인되었습니다'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+              
+              // StorageService 초기화 (아직 안 되어 있다면)
+              await StorageService.init();
+              
+              // 더미 유저를 위한 필수 데이터 설정
+              await StorageService.setUserName('Debug User');
+              await StorageService.setHouseholdId('debug-household-001');
+              await StorageService.setOnboardingCompleted(true);
+              
+              // 더미 토큰 설정 (인증 체크를 통과하기 위해)
+              await StorageService.setToken('debug-token');
+              
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✅ 더미 유저로 로그인되었습니다. 홈으로 이동합니다.'),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+                
+                // 홈 화면으로 이동
+                Navigator.of(context).pushReplacementNamed(AppRouter.partitionMain);
+              }
             },
           ),
           Builder(

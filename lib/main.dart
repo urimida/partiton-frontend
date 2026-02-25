@@ -109,9 +109,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         }
       }
     }
-  }
-
-  /// 사용자 상태에 따라 적절한 라우트 반환
+  }  /// 사용자 상태에 따라 적절한 라우트 반환
   Future<String> _getTargetRoute() async {
     final authService = AuthService();
     
@@ -168,4 +166,3 @@ class _AuthWrapperState extends State<AuthWrapper> {
     );
   }
 }
-

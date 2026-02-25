@@ -9,39 +9,34 @@ class ChoreService {
 
   /// 집안일 자동 배정 요청
   /// - API: POST /api/chores/auto-assign
-  /// - Query: startDate, endDate (YYYY-MM-DD)
-  /// - Body: selectedChores (선택된 집안일 목록)
+  /// - Body: { startDate, endDate, choreTypes[] }
+  /// - choreTypes: DISH_WASHING, COOKING, LAUNDRY, FOODTRASH, TRASH, RECYCLING, VACUUM, MOPPING, WINDOW, BATHROOM, FRIDGE
   Future<ChoreAutoAssignResponseModel> autoAssignChores({
     required String startDate,
     required String endDate,
-    required List<String> selectedChores,
+    required List<String> choreTypes, // enum 값들 (DISH_WASHING 등)
   }) async {
     try {
       // 디버깅: API 요청 데이터 확인
       debugPrint('📤 집안일 자동 배정 API 호출');
       debugPrint('  - 엔드포인트: ${AppConfig.choresAutoAssignEndpoint}');
-      debugPrint('  - Query Parameters:');
+      debugPrint('  - Request Body:');
       debugPrint('    * startDate: $startDate');
       debugPrint('    * endDate: $endDate');
-      debugPrint('  - Request Body:');
-      debugPrint('    * chores: $selectedChores');
-      debugPrint('    * chores 개수: ${selectedChores.length}');
+      debugPrint('    * choreTypes: $choreTypes');
+      debugPrint('    * choreTypes 개수: ${choreTypes.length}');
       
-      // API 명세에 따라 선택된 집안일만 전달
-      // 서버는 이 목록에 있는 집안일만 배정함
+      // API 명세에 따라 body에 모든 데이터 포함
       final requestBody = {
-        'chores': selectedChores, // 선택된 집안일 이름 목록만 전달
+        'startDate': startDate,
+        'endDate': endDate,
+        'choreTypes': choreTypes, // enum 값 배열
       };
       
       debugPrint('  - 전체 Request Body: $requestBody');
-      debugPrint('  - ⚠️ 중요: 선택된 집안일만 배정됩니다!');
       
       final response = await _apiClient.post(
         AppConfig.choresAutoAssignEndpoint,
-        queryParameters: {
-          'startDate': startDate,
-          'endDate': endDate,
-        },
         data: requestBody,
       );
 

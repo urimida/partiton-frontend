@@ -54,6 +54,17 @@ class ApiClient {
         },
         onError: (error, handler) {
           _logger.e('Error: ${error.response?.statusCode} ${error.requestOptions.path}');
+          if (error is DioException) {
+            if (error.type == DioExceptionType.connectionTimeout ||
+                error.type == DioExceptionType.receiveTimeout ||
+                error.type == DioExceptionType.sendTimeout) {
+              _logger.e('Timeout Error Details:');
+              _logger.e('  - Type: ${error.type}');
+              _logger.e('  - Message: ${error.message}');
+              _logger.e('  - Request Path: ${error.requestOptions.path}');
+              _logger.e('  - Base URL: ${error.requestOptions.baseUrl}');
+            }
+          }
           if (error.response != null) {
             _logger.e('Error Response Data: ${error.response?.data}');
             _logger.e('Error Response Headers: ${error.response?.headers}');

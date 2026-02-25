@@ -7,7 +7,7 @@ class ChoreAutoAssignResponseModel {
   final bool isSuccess;
   final String code;
   final String message;
-  final String? result;
+  final List<ChoreAssignmentItem>? result;
   final String? error;
 
   ChoreAutoAssignResponseModel({
@@ -24,3 +24,18 @@ class ChoreAutoAssignResponseModel {
   Map<String, dynamic> toJson() => _$ChoreAutoAssignResponseModelToJson(this);
 }
 
+@JsonSerializable()
+class ChoreAssignmentItem {
+  final int userId;
+  final int choreId;
+  final String date;
+
+  ChoreAssignmentItem({
+    required this.userId,
+    required this.choreId,
+    required this.date,
+  });
+
+  factory ChoreAssignmentItem.fromJson(Map<String, dynamic> json) =>
+      _$ChoreAssignmentItemFromJson(json);  Map<String, dynamic> toJson() => _$ChoreAssignmentItemToJson(this);
+}

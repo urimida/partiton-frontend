@@ -35,6 +35,7 @@ DailyCalendarItem _$DailyCalendarItemFromJson(Map<String, dynamic> json) =>
       title: json['title'] as String,
       assigneeName: json['assigneeName'] as String?,
       isCompleted: json['isCompleted'] as bool,
+      isOwner: json['isOwner'] as bool?,
     );
 
 Map<String, dynamic> _$DailyCalendarItemToJson(DailyCalendarItem instance) =>
@@ -44,4 +45,5 @@ Map<String, dynamic> _$DailyCalendarItemToJson(DailyCalendarItem instance) =>
       'title': instance.title,
       'assigneeName': instance.assigneeName,
       'isCompleted': instance.isCompleted,
+      'isOwner': instance.isOwner,
     };

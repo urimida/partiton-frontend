@@ -98,6 +98,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
         id: item.id,
         category: item.category,
         assigneeName: item.assigneeName,
+        isOwner: item.isOwner,
       );
     }).toList();
   }
@@ -124,6 +125,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
@@ -174,6 +176,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
             dayEvents.add(_CalendarEvent(
               CalendarEventType.chore,
               choreTexts[index],
+              isOwner: null,
             ));
           }
           
@@ -183,6 +186,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
             dayEvents.add(_CalendarEvent(
               CalendarEventType.bill,
               billTexts[index],
+              isOwner: null,
             ));
           }
           
@@ -192,6 +196,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
             dayEvents.add(_CalendarEvent(
               CalendarEventType.memo,
               scheduleTexts[index],
+              isOwner: null,
             ));
           }
           
@@ -200,20 +205,26 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
           }
         }
         
-        setState(() {
-          _cachedEvents = events;
-          _cachedMonthKey = monthKey;
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _cachedEvents = events;
+            _cachedMonthKey = monthKey;
+            _isLoading = false;
+          });
+        }
       } else {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
       }
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
       // 에러 발생 시 빈 데이터로 처리
       if (mounted) {
         debugPrint('캘린더 데이터 로드 실패: $e');
@@ -230,6 +241,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _isLoadingDaily = true;
     });
@@ -240,13 +252,26 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       );
 
       if (response.isSuccess && response.result != null) {
-        setState(() {
-          _cachedDailyEvents ??= {};
-          _cachedDailyEvents![dateKey] = response.result!;
-          _cachedDailyDateKey = dateKey;
-          _isLoadingDaily = false;
-        });
+        if (mounted) {
+          setState(() {
+            _cachedDailyEvents ??= {};
+            _cachedDailyEvents![dateKey] = response.result!;
+            _cachedDailyDateKey = dateKey;
+            _isLoadingDaily = false;
+          });
+        }
       } else {
+        if (mounted) {
+          setState(() {
+            _cachedDailyEvents ??= {};
+            _cachedDailyEvents![dateKey] = [];
+            _cachedDailyDateKey = dateKey;
+            _isLoadingDaily = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
           _cachedDailyEvents ??= {};
           _cachedDailyEvents![dateKey] = [];
@@ -254,13 +279,6 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
           _isLoadingDaily = false;
         });
       }
-    } catch (e) {
-      setState(() {
-        _cachedDailyEvents ??= {};
-        _cachedDailyEvents![dateKey] = [];
-        _cachedDailyDateKey = dateKey;
-        _isLoadingDaily = false;
-      });
       // 에러 발생 시 빈 데이터로 처리
       if (mounted) {
         debugPrint('일간 캘린더 데이터 로드 실패: $e');
@@ -447,34 +465,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
                             ),
                           )
                         : Expanded(
-                            child: Builder(
-                              builder: (context) {
-                                // Provider에서 사용자 정보 가져오기
-                                final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                                final providerUserName = authProvider.user?.name;
-                                
-                                debugPrint('📋 이벤트 목록 빌드 시작');
-                                debugPrint('  - Provider 사용자: ${authProvider.user?.name}');
-                                
-                                return FutureBuilder<String?>(
-                                  future: _getCurrentUserName(context, providerUserName),
-                                  builder: (context, snapshot) {
-                                    if (snapshot.connectionState == ConnectionState.waiting) {
-                                      return const Center(
-                                        child: CircularProgressIndicator(
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                        ),
-                                      );
-                                    }
-                                    
-                                    final userName = snapshot.data;
-                                    debugPrint('📋 FutureBuilder 완료 - 사용자 이름: $userName');
-                                    
-                                    return _buildEventList(_detailDate!, userName);
-                                  },
-                                );
-                              },
-                            ),
+                            child: _buildEventList(_detailDate!),
                           ),
                   ],
                 ),
@@ -597,61 +588,34 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     
     // 1. Provider에서 사용자 정보 확인 (이미 전달받음)
     if (providerUserName != null && providerUserName.isNotEmpty) {
-      debugPrint('✅ [1단계] Provider에서 사용자 이름 가져옴: "$providerUserName"');
       await StorageService.setUserName(providerUserName);
-      debugPrint('  → 로컬 스토리지에 저장 완료');
-      debugPrint('═══════════════════════════════════════════════════════');
       return providerUserName;
     }
-    debugPrint('  → Provider에 사용자 이름 없음');
     
     // 2. 로컬 스토리지에서 먼저 확인 (서버 에러가 발생할 수 있으므로)
-    debugPrint('  - [2단계] 로컬 스토리지 확인 중...');
     final localUserName = await StorageService.getUserName();
-    debugPrint('  - 로컬 스토리지 사용자 이름: $localUserName');
     if (localUserName != null && localUserName.isNotEmpty) {
-      debugPrint('✅ [2단계] 로컬 스토리지에서 사용자 이름 가져옴: "$localUserName"');
-      debugPrint('═══════════════════════════════════════════════════════');
       return localUserName;
     }
-    debugPrint('  → 로컬 스토리지에 사용자 이름 없음');
     
     // 3. 서버에서 사용자 정보 조회 시도 (로컬에 없을 때만)
-    debugPrint('  - [3단계] 서버에서 사용자 정보 조회 시도...');
     try {
       final authService = AuthService();
       final userInfo = await authService.getUserInfo();
       if (userInfo?.name != null && userInfo!.name!.isNotEmpty) {
-        debugPrint('✅ [3단계] 서버에서 사용자 이름 가져옴: "${userInfo.name}"');
         // 서버에서 가져온 이름을 로컬에도 저장
         await StorageService.setUserName(userInfo.name!);
-        debugPrint('  → 로컬 스토리지에 저장 완료');
-        debugPrint('═══════════════════════════════════════════════════════');
         return userInfo.name;
-      } else {
-        debugPrint('⚠️ [3단계] 서버에서 사용자 정보는 가져왔지만 이름이 null 또는 비어있음');
       }
     } catch (e) {
-      debugPrint('❌ [3단계] 서버에서 사용자 정보 조회 실패: $e');
-      debugPrint('  → 서버 에러로 인해 사용자 정보를 가져올 수 없음');
+      // 서버 에러는 무시하고 null 반환
     }
     
-    debugPrint('═══════════════════════════════════════════════════════');
-    debugPrint('⚠️⚠️⚠️ 사용자 이름을 찾을 수 없습니다! ⚠️⚠️⚠️');
-    debugPrint('  - Provider: $providerUserName');
-    debugPrint('  - 로컬 스토리지: $localUserName');
-    debugPrint('  - 서버: 실패 또는 null');
-    debugPrint('═══════════════════════════════════════════════════════');
-    debugPrint('💡 해결 방법:');
-    debugPrint('  1. 온보딩 화면에서 이름을 입력했는지 확인');
-    debugPrint('  2. 앱을 재시작하여 로컬 스토리지 확인');
-    debugPrint('  3. 서버의 /users/me API가 정상 작동하는지 확인');
-    debugPrint('═══════════════════════════════════════════════════════');
     return null;
   }
 
   /// 이벤트 목록 위젯 생성
-  Widget _buildEventList(DateTime date, String? currentUserName) {
+  Widget _buildEventList(DateTime date) {
     final dateKey = _dateKey(date);
     final dailyItems = _getDailyEvents(dateKey);
     
@@ -672,47 +636,24 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       );
     }
     
-    // 현재 사용자 이름 정규화 (공백 제거, trim)
-    final normalizedCurrentUserName = currentUserName?.trim();
-    
-    // 디버깅: 현재 사용자 이름과 이벤트 작성자 이름 로그
-    if (normalizedCurrentUserName != null) {
-      debugPrint('현재 사용자 이름: "$normalizedCurrentUserName"');
-    }
-    
     return ListView(
       shrinkWrap: false,
       padding: const EdgeInsets.only(top: 0),
       children: events.map(
         (event) {
-          // 작성자 확인: SCHEDULE 카테고리이고, 작성자 이름이 현재 사용자와 일치하는지 확인
+          // SCHEDULE 카테고리이고 isOwner가 true인 경우에만 수정/삭제 가능
           final isSchedule = event.category?.toUpperCase() == 'SCHEDULE';
-          final eventAuthorName = event.assigneeName?.trim();
-          
-          // 디버깅: 각 이벤트의 작성자 이름 로그
-          if (isSchedule) {
-            debugPrint('일정 ID: ${event.id}, 작성자: "$eventAuthorName", 현재 사용자: "$normalizedCurrentUserName"');
-          }
-          
-          final isMySchedule = isSchedule && 
-                              eventAuthorName != null && 
-                              eventAuthorName.isNotEmpty &&
-                              normalizedCurrentUserName != null &&
-                              eventAuthorName == normalizedCurrentUserName;
-          
-          if (isSchedule) {
-            debugPrint('일정 ID: ${event.id}, 내 일정인가? $isMySchedule');
-          }
+          final canEdit = isSchedule && (event.isOwner == true);
           
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: _EventChip(
               event: event,
-              // 내가 작성한 일정만 수정/삭제 가능
-              onDelete: event.id != null && isMySchedule
+              // isOwner가 true인 경우에만 수정/삭제 가능
+              onDelete: event.id != null && canEdit
                   ? () => _handleDeleteSchedule(event.id!, date)
                   : null,
-              onEdit: event.id != null && isMySchedule
+              onEdit: event.id != null && canEdit
                   ? () => _handleEditSchedule(event.id!, event.description, date)
                   : null,
             ),
@@ -725,38 +666,115 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
   Future<void> _handleDeleteSchedule(int scheduleId, DateTime date) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('일정 삭제'),
-        content: const Text('정말 이 일정을 삭제하시겠습니까?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('취소'),
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        alignment: Alignment.center,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white,
+              width: 0.5,
+            ),
+            gradient: const RadialGradient(
+              center: Alignment(-0.1212, -0.1178),
+              radius: 1.6319,
+              colors: [
+                Color.fromRGBO(255, 255, 255, 0.10),
+                Color.fromRGBO(255, 255, 255, 0.15),
+              ],
+              stops: [0.0, 1.0],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.white.withOpacity(0.25),
+                blurRadius: 20,
+                spreadRadius: 0,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('삭제'),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '일정 삭제',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '정말 이 일정을 삭제하시겠습니까?',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.normal,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildGlassmorphismButton(
+                        text: '취소',
+                        onTap: () => Navigator.of(context).pop(false),
+                        width: 100,
+                      ),
+                      const SizedBox(width: 12),
+                      _buildGlassmorphismButton(
+                        text: '삭제',
+                        onTap: () => Navigator.of(context).pop(true),
+                        width: 100,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ),
-        ],
+        ),
       ),
     );
 
     if (confirmed != true) return;
 
     try {
-      await _calendarService.deleteSchedule(scheduleId: scheduleId);
+      // DELETE /api/schedules/{scheduleId} 호출
+      final response = await _calendarService.deleteSchedule(scheduleId: scheduleId);
       
       if (!mounted) return;
+
+      // API 응답 확인 (isSuccess 체크)
+      if (!response.isSuccess) {
+        throw Exception(response.message ?? '일정 삭제에 실패했습니다.');
+      }
 
       // 캐시 무효화 및 재로드
       final dateKey = _dateKey(date);
       _cachedDailyEvents?.remove(dateKey);
-      await _loadDailyCalendarData(date);
+      await _loadDailyCalendarData(date, forceRefresh: true);
+
+      // 월간 캘린더도 갱신
+      refreshCalendar();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('일정이 삭제되었습니다.'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(response.message.isNotEmpty ? response.message : '일정이 삭제되었습니다.'),
+          duration: const Duration(seconds: 2),
         ),
       );
     } catch (e) {
@@ -764,7 +782,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('일정 삭제에 실패했습니다: ${e is ApiException ? e.message : '알 수 없는 오류'}'),
+          content: Text('일정 삭제에 실패했습니다: ${e is ApiException ? e.message : e.toString()}'),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -788,55 +806,193 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) {
         return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('일정 수정'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(
-                      labelText: '일정 내용',
-                      border: OutlineInputBorder(),
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.transparent,
+              alignment: Alignment.center,
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white,
+                    width: 0.5,
+                  ),
+                  gradient: const RadialGradient(
+                    center: Alignment(-0.1212, -0.1178),
+                    radius: 1.6319,
+                    colors: [
+                      Color.fromRGBO(255, 255, 255, 0.10),
+                      Color.fromRGBO(255, 255, 255, 0.15),
+                    ],
+                    stops: [0.0, 1.0],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white.withOpacity(0.25),
+                      blurRadius: 20,
+                      spreadRadius: 0,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          '일정 수정',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Pretendard Variable',
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        // 입력 필드
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                              width: 0.5,
+                            ),
+                            gradient: const RadialGradient(
+                              center: Alignment(-0.1212, -0.1178),
+                              radius: 1.6319,
+                              colors: [
+                                Color.fromRGBO(255, 255, 255, 0.10),
+                                Color.fromRGBO(255, 255, 255, 0.15),
+                              ],
+                              stops: [0.0, 1.0],
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                              child: TextField(
+                                controller: controller,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontFamily: 'Pretendard Variable',
+                                ),
+                                decoration: const InputDecoration(
+                                  border: InputBorder.none,
+                                  hintText: '일정을 입력해주세요...',
+                                  hintStyle: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                    fontFamily: 'Pretendard Variable',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // 날짜 선택 버튼
+                        GestureDetector(
+                          onTap: () async {
+                            final DateTime? picked = await showDialog<DateTime>(
+                              context: context,
+                              barrierColor: Colors.black.withOpacity(0.5),
+                              builder: (context) => _GlassmorphicDatePicker(
+                                initialDate: selectedDate,
+                                firstDate: DateTime(2020, 1, 1), // 충분히 과거
+                                lastDate: DateTime(2100, 12, 31), // 충분히 미래
+                              ),
+                            );
+                            if (picked != null) {
+                              setDialogState(() {
+                                selectedDate = picked;
+                              });
+                            }
+                          },
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.3),
+                                width: 0.5,
+                              ),
+                              gradient: const RadialGradient(
+                                center: Alignment(-0.1212, -0.1178),
+                                radius: 1.6319,
+                                colors: [
+                                  Color.fromRGBO(255, 255, 255, 0.10),
+                                  Color.fromRGBO(255, 255, 255, 0.15),
+                                ],
+                                stops: [0.0, 1.0],
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      '날짜 변경: ${_formatDate(selectedDate)}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontFamily: 'Pretendard Variable',
+                                      ),
+                                    ),
+                                    const Icon(
+                                      Icons.calendar_today,
+                                      color: Colors.white70,
+                                      size: 16,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildGlassmorphismButton(
+                              text: '취소',
+                              onTap: () => Navigator.of(context).pop(),
+                              width: 100,
+                            ),
+                            const SizedBox(width: 12),
+                            _buildGlassmorphismButton(
+                              text: '저장',
+                              onTap: () {
+                                Navigator.of(context).pop({
+                                  'content': controller.text.trim(),
+                                  'date': selectedDate,
+                                });
+                              },
+                              width: 100,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  TextButton(
-                    onPressed: () async {
-                      final DateTime? selected = await showDatePicker(
-                        context: context,
-                        initialDate: selectedDate,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (selected != null) {
-                        setState(() {
-                          selectedDate = selected;
-                        });
-                      }
-                    },
-                    child: Text('날짜 변경: ${_formatDate(selectedDate)}'),
-                  ),
-                ],
+                ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('취소'),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop({
-                      'content': controller.text.trim(),
-                      'date': selectedDate,
-                    });
-                  },
-                  child: const Text('저장'),
-                ),
-              ],
             );
           },
         );
@@ -899,22 +1055,86 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     return '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}';
   }
 
+  Widget _buildGlassmorphismButton({
+    required String text,
+    required VoidCallback onTap,
+    double width = 100,
+    double height = 45.327,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white,
+            width: 0.5,
+          ),
+          gradient: const RadialGradient(
+            center: Alignment(-0.1212, -0.1178),
+            radius: 1.6319,
+            colors: [
+              Color.fromRGBO(255, 255, 255, 0.10),
+              Color.fromRGBO(255, 255, 255, 0.15),
+            ],
+            stops: [0.0, 1.0],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.white.withOpacity(0.25),
+              blurRadius: 30,
+              spreadRadius: 0,
+              offset: const Offset(4, 4),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Center(
+              child: Text(
+                text,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'Pretendard Variable',
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _previousMonth() {
-    setState(() {
-      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
-    });
-    _loadCalendarData(_currentMonth.year, _currentMonth.month);
+    if (!mounted) return;
+    if (mounted) {
+      setState(() {
+        _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
+      });
+      _loadCalendarData(_currentMonth.year, _currentMonth.month);
+    }
   }
 
   void _nextMonth() {
-    setState(() {
-      _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
-    });
-    _loadCalendarData(_currentMonth.year, _currentMonth.month);
+    if (!mounted) return;
+    if (mounted) {
+      setState(() {
+        _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
+      });
+      _loadCalendarData(_currentMonth.year, _currentMonth.month);
+    }
   }
 
   void _selectMonth(int monthIndex) {
-    setState(() {
+    if (!mounted) return;
+    if (mounted) {
+      setState(() {
       final newMonth = monthIndex + 1;
       _currentMonth = DateTime(_currentMonth.year, newMonth);
       
@@ -929,12 +1149,15 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
         // 주간 달력 모드 유지
         _showDetail = true;
       }
-    });
-    _loadCalendarData(_currentMonth.year, _currentMonth.month);
+      });
+      _loadCalendarData(_currentMonth.year, _currentMonth.month);
+    }
   }
 
   void _handleDateTap(DateTime date) {
-    setState(() {
+    if (!mounted) return;
+    if (mounted) {
+      setState(() {
       final bool sameDetail =
           _detailDate != null && _detailDate!.year == date.year && _detailDate!.month == date.month && _detailDate!.day == date.day;
       final bool sameSelected =
@@ -958,13 +1181,14 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       if (date.month != _currentMonth.month) {
         _currentMonth = DateTime(date.year, date.month);
       }
-    });
-    
-    // 일간 상세 조회 호출
-    _loadDailyCalendarData(date);
-    
-    // 선택된 날짜를 외부에 알림
-    widget.onDateSelected?.call(date);
+      });
+      
+      // 일간 상세 조회 호출
+      _loadDailyCalendarData(date);
+      
+      // 선택된 날짜를 외부에 알림
+      widget.onDateSelected?.call(date);
+    }
   }
 
   @override
@@ -1329,6 +1553,7 @@ class _CalendarEvent {
   final int? id;
   final String? category;
   final String? assigneeName;
+  final bool? isOwner;
 
   const _CalendarEvent(
     this.type, 
@@ -1336,8 +1561,384 @@ class _CalendarEvent {
     this.id,
     this.category,
     this.assigneeName,
+    this.isOwner,
   });
 }
 
 enum CalendarEventType { bill, chore, memo }
 
+/// 글래스모피즘 효과가 적용된 날짜 선택 다이얼로그
+class _GlassmorphicDatePicker extends StatefulWidget {
+  final DateTime initialDate;
+  final DateTime firstDate;
+  final DateTime lastDate;
+
+  const _GlassmorphicDatePicker({
+    required this.initialDate,
+    required this.firstDate,
+    required this.lastDate,
+  });
+
+  @override
+  State<_GlassmorphicDatePicker> createState() => _GlassmorphicDatePickerState();
+}
+
+class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
+  late DateTime _selectedDate;
+  late DateTime _currentMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = widget.initialDate;
+    _currentMonth = DateTime(_selectedDate.year, _selectedDate.month);
+  }
+
+  void _previousMonth() {
+    if (!mounted) return;
+    if (mounted) {
+      setState(() {
+        _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
+      });
+    }
+  }
+
+  void _nextMonth() {
+    if (!mounted) return;
+    if (mounted) {
+      setState(() {
+        _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
+      });
+    }
+  }
+
+  bool _canGoPrevious() {
+    // 제한 없음 - 항상 이전 월로 이동 가능
+    return true;
+  }
+
+  bool _canGoNext() {
+    // 제한 없음 - 항상 다음 월로 이동 가능
+    return true;
+  }
+
+  bool _isDateSelectable(DateTime date) {
+    // 제한 없음 - 모든 날짜 선택 가능
+    return true;
+  }
+
+  bool _isDateSelected(DateTime date) {
+    return date.year == _selectedDate.year &&
+        date.month == _selectedDate.month &&
+        date.day == _selectedDate.day;
+  }
+
+  void _selectDate(DateTime date) {
+    if (_isDateSelectable(date)) {
+      if (!mounted) return;
+      if (mounted) {
+        setState(() {
+          _selectedDate = DateTime(date.year, date.month, date.day);
+        });
+      }
+    }
+  }
+
+  String _getMonthYearText() {
+    final months = [
+      '1월', '2월', '3월', '4월', '5월', '6월',
+      '7월', '8월', '9월', '10월', '11월', '12월'
+    ];
+    return '${_currentMonth.year}년 ${months[_currentMonth.month - 1]}';
+  }
+
+  List<DateTime> _getDaysInMonth() {
+    final firstDay = DateTime(_currentMonth.year, _currentMonth.month, 1);
+    final lastDay = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
+    final firstWeekday = firstDay.weekday % 7; // 0 = 일요일, 6 = 토요일
+
+    final days = <DateTime>[];
+    
+    // 이전 달의 마지막 날들
+    for (int i = firstWeekday - 1; i >= 0; i--) {
+      days.add(firstDay.subtract(Duration(days: i + 1)));
+    }
+
+    // 현재 달의 날들
+    for (int i = 1; i <= lastDay.day; i++) {
+      days.add(DateTime(_currentMonth.year, _currentMonth.month, i));
+    }
+
+    // 다음 달의 첫 날들 (35개 셀을 채우기 위해 - 5주)
+    final remainingDays = 35 - days.length;
+    for (int i = 1; i <= remainingDays; i++) {
+      days.add(DateTime(_currentMonth.year, _currentMonth.month + 1, i));
+    }
+
+    return days;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final days = _getDaysInMonth();
+    final weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      alignment: Alignment.center,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: 280,
+          maxHeight: 360,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: Colors.white,
+                  width: 0.5,
+                ),
+                gradient: const RadialGradient(
+                  center: Alignment(-0.1212, -0.1178),
+                  radius: 1.7145,
+                  colors: [
+                    Color.fromRGBO(255, 255, 255, 0.10),
+                    Color.fromRGBO(255, 255, 255, 0.15),
+                  ],
+                  stops: [0.0, 1.0],
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color.fromRGBO(255, 255, 255, 0.25),
+                    offset: Offset(4, 4),
+                    blurRadius: 30,
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 헤더
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Opacity(
+                        opacity: _canGoPrevious() ? 1 : 0.3,
+                        child: GestureDetector(
+                          onTap: _canGoPrevious() ? _previousMonth : null,
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.15),
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.chevron_left,
+                              color: Colors.white.withOpacity(0.95),
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _getMonthYearText(),
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.95),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Pretendard Variable',
+                        ),
+                      ),
+                      Opacity(
+                        opacity: _canGoNext() ? 1 : 0.3,
+                        child: GestureDetector(
+                          onTap: _canGoNext() ? _nextMonth : null,
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.15),
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.chevron_right,
+                              color: Colors.white.withOpacity(0.95),
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // 요일 헤더
+                  Row(
+                    children: weekdays.map((day) {
+                      return Expanded(
+                        child: Center(
+                          child: Text(
+                            day,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.95),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w500,
+                              fontFamily: 'Pretendard Variable',
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 8),
+                  // 날짜 그리드
+                  SizedBox(
+                    height: 160,
+                    child: GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 7,
+                        childAspectRatio: 1.8,
+                        mainAxisSpacing: 0.5,
+                        crossAxisSpacing: 0.5,
+                      ),
+                      itemCount: 35,
+                      itemBuilder: (context, index) {
+                        final date = days[index];
+                        final isCurrentMonth = date.month == _currentMonth.month;
+                        final isSelectable = _isDateSelectable(date);
+                        final isSelected = _isDateSelected(date);
+                        final isToday = date.year == DateTime.now().year &&
+                            date.month == DateTime.now().month &&
+                            date.day == DateTime.now().day;
+
+                        return GestureDetector(
+                          onTap: () => _selectDate(date),
+                          child: Container(
+                            margin: const EdgeInsets.all(0.25),
+                            child: isSelected
+                                ? Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(4),
+                                      color: Colors.white.withOpacity(0.15),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.3),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${date.day}',
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.95),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          fontFamily: 'Pretendard Variable',
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: isToday
+                                          ? Border.all(
+                                              color: Colors.white.withOpacity(0.3),
+                                              width: 0.8,
+                                            )
+                                          : null,
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${date.day}',
+                                        style: TextStyle(
+                                          color: isCurrentMonth && isSelectable
+                                              ? Colors.white.withOpacity(0.95)
+                                              : Colors.white.withOpacity(0.4),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w400,
+                                          fontFamily: 'Pretendard Variable',
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // 버튼
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.of(context).pop(),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.15),
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Text(
+                            '취소',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.95),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w400,
+                              fontFamily: 'Pretendard Variable',
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () => Navigator.of(context).pop(_selectedDate),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.white.withOpacity(0.08),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.2),
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Text(
+                            '확인',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.95),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Pretendard Variable',
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

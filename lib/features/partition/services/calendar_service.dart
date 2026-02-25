@@ -89,6 +89,9 @@ class CalendarService {
   }
 
   /// 일정 삭제
+  /// - API: DELETE /api/schedules/{scheduleId}
+  /// - Path Parameter: scheduleId (integer)
+  /// - Response: ScheduleResponseModel (isSuccess, code, message, result, error)
   Future<ScheduleResponseModel> deleteSchedule({
     required int scheduleId,
   }) async {
