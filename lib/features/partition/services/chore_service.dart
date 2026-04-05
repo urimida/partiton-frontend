@@ -3,6 +3,7 @@ import 'package:partition_app/core/config/app_config.dart';
 import 'package:partition_app/core/network/api_client.dart';
 import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/features/partition/models/chore_auto_assign_response_model.dart';
+import 'package:partition_app/features/partition/models/schedule_response_model.dart';
 
 class ChoreService {
   final ApiClient _apiClient = ApiClient();
@@ -46,6 +47,28 @@ class ChoreService {
       return ChoreAutoAssignResponseModel.fromJson(response.data);
     } catch (e) {
       debugPrint('❌ API 호출 실패: $e');
+      throw ApiException.fromDioError(e);
+    }
+  }
+
+  /// 집안일 완료 처리 (체크)
+  /// - PATCH /api/chores/{choreId}
+  /// - Body: { isCompleted: true | false }
+  Future<ScheduleResponseModel> updateChoreCompletion({
+    required int choreId,
+    required bool isCompleted,
+  }) async {
+    try {
+      final endpoint = AppConfig.choreDetailEndpoint.replaceAll(
+        '{choreId}',
+        choreId.toString(),
+      );
+      final response = await _apiClient.patch(
+        endpoint,
+        data: {'isCompleted': isCompleted},
+      );
+      return ScheduleResponseModel.fromJson(response.data);
+    } catch (e) {
       throw ApiException.fromDioError(e);
     }
   }

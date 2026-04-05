@@ -29,21 +29,7 @@ class PartitionApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
-      providers: [
-        // AuthProvider를 디버그 모드에서 더미 유저로 초기화
-        ChangeNotifierProvider(
-          create: (_) {
-            final auth = AuthProvider();
-            if (kDebugMode) {
-              // 디버그 모드에서 자동으로 더미 유저 설정 (선택사항)
-              // auth.setMockUserForDebug();
-            }
-            return auth;
-          },
-        ),
-        // 나머지 Provider들
-        ...AppProviders.providers.skip(1), // AuthProvider는 이미 추가했으므로 제외
-      ],
+      providers: AppProviders.providers,
       child: MaterialApp(
         title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
@@ -109,7 +95,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
         }
       }
     }
-  }  /// 사용자 상태에 따라 적절한 라우트 반환
+  }
+
+  /// 사용자 상태에 따라 적절한 라우트 반환
   Future<String> _getTargetRoute() async {
     final authService = AuthService();
     

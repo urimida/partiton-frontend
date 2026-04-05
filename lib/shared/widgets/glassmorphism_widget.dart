@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
-import 'package:partition_app/shared/utils/app_colors.dart';
 
 /// 글래스모피즘 효과를 적용한 위젯
 /// 재사용 가능한 컴포넌트
@@ -31,7 +30,57 @@ class GlassmorphismWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final border = borderRadius ?? BorderRadius.circular(0);
-    
+    /// width·height가 모두 있으면(모달 등) 내용을 꽉 채워 `Expanded`+스크롤이 유한 높이를 받게 함.
+    final hasFixedSize = width != null && height != null;
+
+    final blurLayer = BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(backgroundOpacity.clamp(0, 1)),
+          borderRadius: border,
+        ),
+      ),
+    );
+
+    final strokeLayers = showStroke
+        ? <Widget>[
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: border,
+                  border: Border.all(
+                    color: borderColor ?? Colors.white.withOpacity(0.8),
+                    width: 1,
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: border,
+                  gradient: strokeGradient ??
+                      const RadialGradient(
+                        center: Alignment(0.2535, -0.6739),
+                        radius: 2.6345,
+                        colors: [
+                          Color.fromRGBO(255, 255, 255, 1.0),
+                          Color.fromRGBO(255, 255, 255, 0.0),
+                        ],
+                        stops: [0.0, 1.0],
+                      ),
+                ),
+              ),
+            ),
+          ]
+        : const <Widget>[];
+
+    final paddedChild = Container(
+      padding: padding,
+      child: child,
+    );
+
     return Container(
       width: width,
       height: height,
@@ -40,58 +89,22 @@ class GlassmorphismWidget extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: border,
-        child: Stack(
-          children: [
-            // Backdrop blur 효과 + 반투명 배경 (글래스모피즘 내부 채우기)
-            BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                decoration: BoxDecoration(
-                  // 반투명 배경 (블러와 함께 글래스모피즘 효과)
-                  color: Colors.white.withOpacity(backgroundOpacity.clamp(0, 1)),
-                  borderRadius: border,
-                ),
+        child: hasFixedSize
+            ? Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned.fill(child: blurLayer),
+                  ...strokeLayers,
+                  Positioned.fill(child: paddedChild),
+                ],
+              )
+            : Stack(
+                children: [
+                  blurLayer,
+                  ...strokeLayers,
+                  paddedChild,
+                ],
               ),
-            ),
-            // 글래스 스트로크 (radial gradient) - 전체 영역에 오버레이로 적용
-            if (showStroke) ...[
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: border,
-                    border: Border.all(
-                      color: borderColor ?? Colors.white.withOpacity(0.8),
-                      width: 1,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: border,
-                    gradient: strokeGradient ??
-                        const RadialGradient(
-                          // 263.45% 205.32% at 25.35% -67.39%
-                          center: Alignment(0.2535, -0.6739),
-                          radius: 2.6345,
-                          colors: [
-                            Color.fromRGBO(255, 255, 255, 1.0), // #FFF 0%
-                            Color.fromRGBO(255, 255, 255, 0.0), // rgba(255, 255, 255, 0.00) 100%
-                          ],
-                          stops: [0.0, 1.0],
-                        ),
-                  ),
-                ),
-              ),
-            ],
-            // 내용물
-            Container(
-              padding: padding,
-              child: child,
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -139,4 +152,3 @@ class GlassmorphismStroke extends StatelessWidget {
     );
   }
 }
-

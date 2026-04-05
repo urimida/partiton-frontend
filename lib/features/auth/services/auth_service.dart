@@ -170,6 +170,70 @@ class AuthService {
     }
   }
 
+  /// 그룹(가구)에 속한 멤버 이름 목록. 정산 시 참여자 선택에 사용.
+  /// API 형식: `{ isSuccess, result: [ { name } ] }` 또는 `result.members` 등 유연히 파싱.
+  Future<List<String>> fetchHouseholdMemberNames() async {
+    try {
+      final response = await _apiClient.get(AppConfig.householdMembersEndpoint);
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        return _fallbackHouseholdMemberNames();
+      }
+      if (data['isSuccess'] == false) {
+        return _fallbackHouseholdMemberNames();
+      }
+      final dynamic result = data['result'];
+      List<dynamic>? list;
+      if (result is List) {
+        list = result;
+      } else if (result is Map<String, dynamic>) {
+        final m = result['members'] ??
+            result['memberList'] ??
+            result['users'] ??
+            result['userList'];
+        if (m is List) list = m;
+      }
+      if (list == null || list.isEmpty) {
+        return _fallbackHouseholdMemberNames();
+      }
+      final names = <String>[];
+      for (final e in list) {
+        if (e is Map<String, dynamic>) {
+          final n = e['name'] as String? ??
+              e['nickname'] as String? ??
+              e['userName'] as String?;
+          if (n != null && n.trim().isNotEmpty) {
+            names.add(n.trim());
+          }
+        }
+      }
+      if (names.isEmpty) {
+        return _fallbackHouseholdMemberNames();
+      }
+      return names;
+    } catch (e) {
+      debugPrint('fetchHouseholdMemberNames: $e');
+      return _fallbackHouseholdMemberNames();
+    }
+  }
+
+  Future<List<String>> _fallbackHouseholdMemberNames() async {
+    final names = <String>[];
+    final u = await getUserInfo();
+    if (u?.name != null && u!.name!.trim().isNotEmpty) {
+      names.add(u.name!.trim());
+    }
+    final local = await StorageService.getUserName();
+    if (local != null && local.trim().isNotEmpty) {
+      final t = local.trim();
+      if (!names.contains(t)) names.add(t);
+    }
+    for (var i = names.length; i < 4; i++) {
+      names.add('그룹원 ${i + 1}');
+    }
+    return names;
+  }
+
   /// 사용자 정보 조회
   /// 서버에서 사용자 정보를 가져오려고 시도하지만, 실패해도 예외를 던지지 않음
   Future<UserModel?> getUserInfo() async {

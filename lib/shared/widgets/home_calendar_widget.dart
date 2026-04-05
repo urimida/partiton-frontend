@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
 import 'package:partition_app/features/partition/services/calendar_service.dart';
+import 'package:partition_app/features/partition/services/chore_service.dart';
 import 'package:partition_app/features/partition/models/calendar_response_model.dart';
 import 'package:partition_app/features/partition/models/daily_calendar_response_model.dart';
 import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/core/storage/storage_service.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
+
+const _kChoreTaskNames = ['설거지', '빨래', '청소', '분리수거'];
+const _kOtherMemberNames = ['홍길동', '김민수', '이영희', '박서준'];
 
 /// 홈 화면용 캘린더 위젯
 /// 글래스모피즘 효과가 적용된 커스텀 캘린더
@@ -44,9 +48,24 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
   Map<String, List<DailyCalendarItem>>? _cachedDailyEvents;
   String? _cachedDailyDateKey;
   bool _isLoadingDaily = false;
-  
+  final ChoreService _choreService = ChoreService();
+  final Set<int> _choreToggleInProgress = {};
+  /// 집안일 더미/월간 집계용 담당자 표시명(로그인·로컬 이름)
+  String _meNameForChores = '나';
+  /// 월간 더미 집안일(음수 id) 로컬 완료 — 서버와 별개
+  final Map<int, bool> _previewChoreCompleted = {};
+
+  /// 월간 점 표시용. 4월은 API/캐시와 무관하게 미리보기 더미를 항상 합침(표시 연도·날짜 키 일치, 캐시 조기 return에도 적용).
   Map<String, List<_CalendarEvent>> get _events {
-    return _cachedEvents ?? {};
+    final base = _cachedEvents ?? {};
+    Map<String, List<_CalendarEvent>> combined;
+    if (_currentMonth.month == 4) {
+      combined = Map<String, List<_CalendarEvent>>.from(base);
+      combined.addAll(_buildAprilPreviewEvents(_currentMonth.year));
+    } else {
+      combined = base;
+    }
+    return _applyPreviewChoreCompletion(combined);
   }
 
   List<DailyCalendarItem>? _getDailyEvents(String dateKey) {
@@ -66,9 +85,6 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
           description = '${item.assigneeName} · ${item.title}';
         } else {
           description = item.title;
-        }
-        if (item.isCompleted) {
-          description += ' ✓';
         }
       } else if (item.category.toUpperCase() == 'SCHEDULE') {
         eventType = CalendarEventType.memo;
@@ -91,14 +107,23 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
           description = item.title;
         }
       }
-      
+
+      bool? isOwnerForEvent = item.isOwner;
+      if (item.category.toUpperCase() == 'CHORE' &&
+          isOwnerForEvent == null &&
+          item.assigneeName != null &&
+          item.assigneeName!.isNotEmpty) {
+        isOwnerForEvent = item.assigneeName == _meNameForChores;
+      }
+
       return _CalendarEvent(
         eventType, 
         description,
         id: item.id,
         category: item.category,
         assigneeName: item.assigneeName,
-        isOwner: item.isOwner,
+        isOwner: isOwnerForEvent,
+        isCompleted: item.isCompleted,
       );
     }).toList();
   }
@@ -115,6 +140,134 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     if (_detailDate != null) {
       _loadDailyCalendarData(_detailDate!, forceRefresh: true);
     }
+  }
+
+  /// UI 확인용: 해당 연도 4월 월간 그리드에 집안일·공과금·일정 점이 다양하게 보이도록
+  Map<String, List<_CalendarEvent>> _buildAprilPreviewEvents(int year) {
+    const billTexts = [
+      '전기요금 납부',
+      '가스요금 납부',
+      '인터넷 요금 납부',
+      '수도요금 납부',
+    ];
+    const scheduleTexts = [
+      '일정이 있습니다',
+      '중요한 일정',
+      '약속',
+    ];
+
+    List<_CalendarEvent> buildDay(
+      String dateKey,
+      int choreCount,
+      int utilityBillsCount,
+      int scheduleCount,
+    ) {
+      final dayEvents = <_CalendarEvent>[];
+      for (int i = 0; i < choreCount; i++) {
+        final index = (dateKey.hashCode + i) % _kChoreTaskNames.length;
+        final taskName = _kChoreTaskNames[index];
+        final assignee = (i % 4 == 0)
+            ? _meNameForChores
+            : _kOtherMemberNames[(i + dateKey.hashCode) % _kOtherMemberNames.length];
+        final isMine = assignee == _meNameForChores;
+        final id = _syntheticChoreId(dateKey, i);
+        dayEvents.add(_CalendarEvent(
+          CalendarEventType.chore,
+          '$assignee · $taskName',
+          id: id,
+          category: 'CHORE',
+          assigneeName: assignee,
+          isOwner: isMine,
+          isCompleted: false,
+        ));
+      }
+      for (int i = 0; i < utilityBillsCount; i++) {
+        final index = (dateKey.hashCode + i) % billTexts.length;
+        dayEvents.add(_CalendarEvent(
+          CalendarEventType.bill,
+          billTexts[index],
+          isOwner: null,
+        ));
+      }
+      for (int i = 0; i < scheduleCount; i++) {
+        final index = (dateKey.hashCode + i) % scheduleTexts.length;
+        dayEvents.add(_CalendarEvent(
+          CalendarEventType.memo,
+          scheduleTexts[index],
+          isOwner: null,
+        ));
+      }
+      return dayEvents;
+    }
+
+    final out = <String, List<_CalendarEvent>>{};
+    void put(String day, int c, int u, int s) {
+      final dateKey = '$year-04-${day.padLeft(2, '0')}';
+      final list = buildDay(dateKey, c, u, s);
+      if (list.isNotEmpty) {
+        out[dateKey] = list;
+      }
+    }
+
+    // (집안일, 공과금, 일정) 개수 — 한 달에 걸쳐 패턴 다양하게
+    put('01', 1, 1, 1);
+    put('03', 2, 0, 1);
+    put('05', 1, 2, 0);
+    put('07', 0, 1, 2);
+    put('09', 3, 1, 0);
+    put('11', 1, 0, 2);
+    put('13', 2, 1, 1);
+    put('15', 1, 1, 0);
+    put('17', 0, 2, 1);
+    put('19', 2, 0, 2);
+    put('21', 1, 1, 1);
+    put('23', 4, 0, 0);
+    put('25', 0, 1, 3);
+    put('27', 1, 2, 0);
+    put('29', 2, 1, 1);
+    put('30', 1, 0, 1);
+    return out;
+  }
+
+  Future<String> _resolveMeName() async {
+    if (!mounted) return _meNameForChores;
+    try {
+      final auth = Provider.of<AuthProvider>(context, listen: false).user?.name;
+      if (auth != null && auth.isNotEmpty) return auth;
+    } catch (_) {}
+    final n = await StorageService.getUserName();
+    if (n != null && n.isNotEmpty) return n;
+    return '나';
+  }
+
+  /// 월간 집계용 더미 집안일 id(음수). 서버 id와 겹치지 않도록 날짜·인덱스로만 생성.
+  int _syntheticChoreId(String dateKey, int indexInDay) {
+    return -(dateKey.hashCode * 1009 + indexInDay * 17 + 1).abs();
+  }
+
+  Map<String, List<_CalendarEvent>> _applyPreviewChoreCompletion(
+    Map<String, List<_CalendarEvent>> input,
+  ) {
+    if (_previewChoreCompleted.isEmpty) return input;
+    final out = <String, List<_CalendarEvent>>{};
+    for (final entry in input.entries) {
+      out[entry.key] = entry.value.map((ev) {
+        final id = ev.id;
+        if (id == null || id >= 0) return ev;
+        if (!_previewChoreCompleted.containsKey(id)) return ev;
+        final c = _previewChoreCompleted[id]!;
+        return _CalendarEvent(
+          ev.type,
+          ev.description,
+          id: ev.id,
+          category: ev.category,
+          assigneeName: ev.assigneeName,
+          isOwner: ev.isOwner,
+          isCompleted: c,
+        );
+      }).toList();
+    }
+    return out;
   }
 
   Future<void> _loadCalendarData(int year, int month, {bool forceRefresh = false}) async {
@@ -137,16 +290,10 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       );
 
       if (response.isSuccess && response.result != null) {
+        final meName = await _resolveMeName();
+        if (!mounted) return;
         final Map<String, List<_CalendarEvent>> events = {};
-        
-        // 집안일 텍스트 목록
-        final choreTexts = [
-          '설거지 담당',
-          '빨래 담당',
-          '청소 담당',
-          '분리수거 담당',
-        ];
-        
+
         // 공과금 텍스트 목록
         final billTexts = [
           '전기요금 납부',
@@ -170,13 +317,23 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
           
           final List<_CalendarEvent> dayEvents = [];
           
-          // 집안일 추가
+          // 집안일 추가 (월간은 건수만 오므로 담당·더미 id 부여 — 내 담당만 체크 가능)
           for (int i = 0; i < choreCount; i++) {
-            final index = (date.hashCode + i) % choreTexts.length;
+            final index = (date.hashCode + i) % _kChoreTaskNames.length;
+            final taskName = _kChoreTaskNames[index];
+            final assignee = (i % 4 == 0)
+                ? meName
+                : _kOtherMemberNames[(i + date.hashCode) % _kOtherMemberNames.length];
+            final isMine = assignee == meName;
+            final id = _syntheticChoreId(date, i);
             dayEvents.add(_CalendarEvent(
               CalendarEventType.chore,
-              choreTexts[index],
-              isOwner: null,
+              '$assignee · $taskName',
+              id: id,
+              category: 'CHORE',
+              assigneeName: assignee,
+              isOwner: isMine,
+              isCompleted: false,
             ));
           }
           
@@ -204,30 +361,36 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
             events[date] = dayEvents;
           }
         }
-        
+
         if (mounted) {
           setState(() {
+            _meNameForChores = meName;
             _cachedEvents = events;
             _cachedMonthKey = monthKey;
-            _isLoading = false;
           });
         }
       } else {
+        // 응답 실패·result 없음: 해당 월 캐시만 비우고 monthKey 맞춤 (4월은 getter에서 더미 합침)
         if (mounted) {
           setState(() {
-            _isLoading = false;
+            _cachedEvents = {};
+            _cachedMonthKey = monthKey;
           });
         }
       }
     } catch (e) {
       if (mounted) {
+        debugPrint('캘린더 데이터 로드 실패: $e');
+        setState(() {
+          _cachedEvents = {};
+          _cachedMonthKey = monthKey;
+        });
+      }
+    } finally {
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
-      }
-      // 에러 발생 시 빈 데이터로 처리
-      if (mounted) {
-        debugPrint('캘린더 데이터 로드 실패: $e');
       }
     }
   }
@@ -238,6 +401,9 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     
     // 강제 갱신이 아니고 이미 같은 날짜의 데이터가 캐시되어 있으면 다시 로드하지 않음
     if (!forceRefresh && _cachedDailyDateKey == dateKey && _cachedDailyEvents != null && _cachedDailyEvents![dateKey] != null) {
+      if (mounted) {
+        setState(() => _isLoadingDaily = false);
+      }
       return;
     }
 
@@ -257,16 +423,15 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
             _cachedDailyEvents ??= {};
             _cachedDailyEvents![dateKey] = response.result!;
             _cachedDailyDateKey = dateKey;
-            _isLoadingDaily = false;
           });
         }
       } else {
+        // 실패 시 빈 배열을 넣지 않음 — dailyItems가 null로 남아 월간(더미)으로 폴백
         if (mounted) {
           setState(() {
             _cachedDailyEvents ??= {};
-            _cachedDailyEvents![dateKey] = [];
+            _cachedDailyEvents!.remove(dateKey);
             _cachedDailyDateKey = dateKey;
-            _isLoadingDaily = false;
           });
         }
       }
@@ -274,14 +439,18 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       if (mounted) {
         setState(() {
           _cachedDailyEvents ??= {};
-          _cachedDailyEvents![dateKey] = [];
+          _cachedDailyEvents!.remove(dateKey);
           _cachedDailyDateKey = dateKey;
-          _isLoadingDaily = false;
         });
       }
-      // 에러 발생 시 빈 데이터로 처리
       if (mounted) {
         debugPrint('일간 캘린더 데이터 로드 실패: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingDaily = false;
+        });
       }
     }
   }
@@ -311,169 +480,157 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     required int startMonth,
     required int currentMonthIndex,
     required DateTime centerDate,
+    /// 바깥 LayoutBuilder(홈의 SizedBox 등)에서 오는 유한 높이. 내부 LayoutBuilder만 쓰면
+    /// FrostedPanel/AnimatedSwitcher 경로에서 maxHeight가 무한이 되어 Expanded+ListView가 깨짐.
+    required double parentMaxHeight,
   }) {
     final weekDays = _getWeekDays(centerDate);
-    
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // 고정 높이 요소들의 높이 계산
-        final monthSelectorHeight = 50.0;
-        final headerHeight = 40.0; // 요일 헤더
-        final calendarHeight = 80.0; // 날짜 그리드 높이
-        final spacing = 20.0 + 12.0 + 4.0; // SizedBox 높이들 (날짜-이벤트 간격 4로 줄임)
-        final fixedHeight = monthSelectorHeight + headerHeight + calendarHeight + spacing;
-        
-        // 남은 공간을 이벤트 목록에 할당 (최소 200px)
-        final availableHeight = constraints.maxHeight;
-        final eventListHeight = availableHeight > fixedHeight 
-            ? availableHeight - fixedHeight 
-            : 200.0;
-        
-        return Column(
-          key: const ValueKey('week-view'),
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildMonthSelector(startMonth, currentMonthIndex),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-                  .map((day) => SizedBox(
-                        width: 40,
-                        child: Text(
-                          day,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
+    final h = parentMaxHeight.isFinite && parentMaxHeight > 0
+        ? parentMaxHeight
+        : 380.0;
+
+    return SizedBox(
+      height: h,
+      width: double.infinity,
+      child: Column(
+        key: const ValueKey('week-view'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildMonthSelector(startMonth, currentMonthIndex),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+                .map((day) => SizedBox(
+                      width: 40,
+                      child: Text(
+                        day,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 80,
+            child: GridView.builder(
+              padding: EdgeInsets.zero,
+              shrinkWrap: false,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 1.0,
+              ),
+              itemCount: 7,
+              itemBuilder: (context, index) {
+                final date = weekDays[index];
+                final isToday = _isToday(date);
+                final isSelected = _detailDate != null &&
+                    _detailDate!.year == date.year &&
+                    _detailDate!.month == date.month &&
+                    _detailDate!.day == date.day;
+                final events = _events[_dateKey(date)] ?? [];
+                final showBill = events.any((e) => e.type == CalendarEventType.bill);
+                final showChore = events.any((e) => e.type == CalendarEventType.chore);
+                final showMemo = events.any((e) => e.type == CalendarEventType.memo);
+
+                return GestureDetector(
+                  onTap: () => _handleDateTap(date),
+                  child: CustomPaint(
+                    painter: _DateHighlightPainter(
+                      showOrbit: false,
+                      showSelection: isSelected,
+                      color: Colors.white,
+                    ),
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Center(
+                          child: Text(
+                            '${date.day}',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: isToday || isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                            ),
                           ),
                         ),
-                      ))
-                  .toList(),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 80,
-              child: GridView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: false,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7,
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 1.0,
-                ),
-                itemCount: 7,
-                itemBuilder: (context, index) {
-                  final date = weekDays[index];
-                  final isToday = _isToday(date);
-                  final isSelected = _detailDate != null &&
-                      _detailDate!.year == date.year &&
-                      _detailDate!.month == date.month &&
-                      _detailDate!.day == date.day;
-                  final events = _events[_dateKey(date)] ?? [];
-                  // 각 타입이 하나라도 있으면 해당 색의 점 1개만 표시
-                  final showBill = events.any((e) => e.type == CalendarEventType.bill);
-                  final showChore = events.any((e) => e.type == CalendarEventType.chore);
-                  final showMemo = events.any((e) => e.type == CalendarEventType.memo);
-                  
-                  return GestureDetector(
-                    onTap: () => _handleDateTap(date),
-                    child: CustomPaint(
-                      painter: _DateHighlightPainter(
-                        showOrbit: false,
-                        showSelection: isSelected,
-                        color: Colors.white,
-                      ),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Center(
-                            child: Text(
-                              '${date.day}',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: isToday || isSelected
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
+                        if (showBill || showChore || showMemo)
+                          Positioned(
+                            bottom: 4,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (showBill)
+                                  Container(
+                                    width: 4.211,
+                                    height: 4.211,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFFFF4E2),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                if (showBill && (showChore || showMemo))
+                                  const SizedBox(width: 2),
+                                if (showChore)
+                                  Container(
+                                    width: 4.211,
+                                    height: 4.211,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFDBD1C2),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                if (showChore && showMemo)
+                                  const SizedBox(width: 2),
+                                if (showMemo)
+                                  Container(
+                                    width: 4.211,
+                                    height: 4.211,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF7C7C7C),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                          // 이벤트 표시 (각 타입당 점 1개)
-                          if (showBill || showChore || showMemo)
-                            Positioned(
-                              bottom: 4,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (showBill)
-                                    Container(
-                                      width: 4.211,
-                                      height: 4.211,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFFFFF4E2),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  if (showBill && (showChore || showMemo))
-                                    const SizedBox(width: 2),
-                                  if (showChore)
-                                    Container(
-                                      width: 4.211,
-                                      height: 4.211,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFFDBD1C2),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  if (showChore && showMemo)
-                                    const SizedBox(width: 2),
-                                  if (showMemo)
-                                    Container(
-                                      width: 4.211,
-                                      height: 4.211,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFF7C7C7C),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
+                      ],
                     ),
-                  );
-                },
+                  ),
+                );
+              },
+            ),
+          ),
+          if (_detailDate != null) ...[
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_isLoadingDaily)
+                    const LinearProgressIndicator(
+                      minHeight: 2,
+                      backgroundColor: Colors.transparent,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
+                    ),
+                  Expanded(
+                    child: _buildEventList(_detailDate!),
+                  ),
+                ],
               ),
             ),
-            // 선택된 날짜의 이벤트 목록 (스크롤 가능) - 날짜 바로 아래부터 확장
-            if (_detailDate != null) ...[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _isLoadingDaily
-                        ? const Expanded(
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              ),
-                            ),
-                          )
-                        : Expanded(
-                            child: _buildEventList(_detailDate!),
-                          ),
-                  ],
-                ),
-              ),
-            ],
           ],
-        );
-      },
+        ],
+      ),
     );
   }
 
@@ -618,11 +775,18 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
   Widget _buildEventList(DateTime date) {
     final dateKey = _dateKey(date);
     final dailyItems = _getDailyEvents(dateKey);
-    
-    // 일간 상세 데이터가 있으면 사용, 없으면 월간 데이터 사용
-    final events = dailyItems != null
-        ? _convertDailyItemsToEvents(dailyItems)
-        : (_events[dateKey] ?? []);
+    final monthlyFallback = _events[dateKey] ?? [];
+
+    // 일간 실패 시 dailyItems == null → 월간(더미) 사용
+    // 일간이 빈 배열인데 월간에만 일정이 있으면(타임아웃 후 등) 월간으로 표시
+    final List<_CalendarEvent> events;
+    if (dailyItems == null) {
+      events = monthlyFallback;
+    } else if (dailyItems.isEmpty && monthlyFallback.isNotEmpty) {
+      events = monthlyFallback;
+    } else {
+      events = _convertDailyItemsToEvents(dailyItems);
+    }
     
     if (events.isEmpty) {
       return const Center(
@@ -644,6 +808,10 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
           // SCHEDULE 카테고리이고 isOwner가 true인 경우에만 수정/삭제 가능
           final isSchedule = event.category?.toUpperCase() == 'SCHEDULE';
           final canEdit = isSchedule && (event.isOwner == true);
+          final isChoreItem = event.type == CalendarEventType.chore &&
+              event.category?.toUpperCase() == 'CHORE' &&
+              event.id != null &&
+              (event.isOwner == true);
           
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -656,11 +824,71 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
               onEdit: event.id != null && canEdit
                   ? () => _handleEditSchedule(event.id!, event.description, date)
                   : null,
+              onChoreCompleted: isChoreItem
+                  ? (completed) =>
+                      _handleToggleChoreCompletion(event.id!, completed, date)
+                  : null,
+              choreCheckboxBusy: isChoreItem &&
+                  _choreToggleInProgress.contains(event.id!),
             ),
           );
         },
       ).toList(),
     );
+  }
+
+  Future<void> _handleToggleChoreCompletion(
+    int choreId,
+    bool completed,
+    DateTime date,
+  ) async {
+    // 월간 집계/4월 미리보기용 음수 id — 서버 호출 없이 로컬만 반영
+    if (choreId < 0) {
+      if (!mounted) return;
+      setState(() {
+        _previewChoreCompleted[choreId] = completed;
+      });
+      return;
+    }
+    if (_choreToggleInProgress.contains(choreId)) return;
+    setState(() => _choreToggleInProgress.add(choreId));
+    try {
+      final response = await _choreService.updateChoreCompletion(
+        choreId: choreId,
+        isCompleted: completed,
+      );
+      if (!mounted) return;
+      if (!response.isSuccess) {
+        throw Exception(
+          response.message.isNotEmpty
+              ? response.message
+              : '집안일 완료 처리에 실패했어요.',
+        );
+      }
+      await _loadDailyCalendarData(date, forceRefresh: true);
+      if (!mounted) return;
+      await _loadCalendarData(
+        _currentMonth.year,
+        _currentMonth.month,
+        forceRefresh: true,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is ApiException
+                ? e.message
+                : (e is Exception ? e.toString() : '집안일 완료 처리에 실패했어요.'),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _choreToggleInProgress.remove(choreId));
+      }
+    }
   }
 
   Future<void> _handleDeleteSchedule(int scheduleId, DateTime date) async {
@@ -1194,8 +1422,11 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
   @override
   void initState() {
     super.initState();
-    // 초기 로드
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final me = await _resolveMeName();
+      if (mounted && me != _meNameForChores) {
+        setState(() => _meNameForChores = me);
+      }
       _loadCalendarData(_currentMonth.year, _currentMonth.month);
     });
   }
@@ -1219,6 +1450,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
                 startMonth: startMonth,
                 currentMonthIndex: currentMonthIndex,
                 centerDate: _detailDate!,
+                parentMaxHeight: constraints.maxHeight,
               )
             : _buildCalendarContent(
                 days: days,
@@ -1442,16 +1674,21 @@ class _EventChip extends StatelessWidget {
   final _CalendarEvent event;
   final VoidCallback? onDelete;
   final VoidCallback? onEdit;
+  final ValueChanged<bool>? onChoreCompleted;
+  final bool choreCheckboxBusy;
 
   const _EventChip({
     required this.event,
     this.onDelete,
     this.onEdit,
+    this.onChoreCompleted,
+    this.choreCheckboxBusy = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final Color dotColor = _eventColor(event.type);
+    final showChoreCheckbox = onChoreCompleted != null;
     return ClipRRect(
       borderRadius: BorderRadius.circular(31.369),
       child: BackdropFilter(
@@ -1479,7 +1716,7 @@ class _EventChip extends StatelessWidget {
           padding:
               const EdgeInsets.symmetric(horizontal: 10.038, vertical: 6.0),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
                 width: 4.211,
@@ -1490,15 +1727,19 @@ class _EventChip extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6.274),
-              Flexible(
+              Expanded(
                 child: Text(
                   event.description,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontFamily: 'Pretendard Variable',
                     fontSize: 12,
                     fontWeight: FontWeight.w400,
-                    fontFeatures: [
+                    decoration: (event.isCompleted ?? false) && showChoreCheckbox
+                        ? TextDecoration.lineThrough
+                        : TextDecoration.none,
+                    decorationColor: Colors.white70,
+                    fontFeatures: const [
                       FontFeature.tabularFigures(),
                       FontFeature.liningFigures(),
                     ],
@@ -1528,6 +1769,29 @@ class _EventChip extends StatelessWidget {
                     ),
                   ),
               ],
+              if (showChoreCheckbox) ...[
+                const SizedBox(width: 6),
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: Checkbox(
+                    value: event.isCompleted ?? false,
+                    onChanged: choreCheckboxBusy
+                        ? null
+                        : (v) {
+                            if (v != null) onChoreCompleted!(v);
+                          },
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                    side: const BorderSide(
+                      color: Colors.white,
+                      width: 1.2,
+                    ),
+                    fillColor: MaterialStateProperty.all(Colors.transparent),
+                    checkColor: Colors.white,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1554,6 +1818,7 @@ class _CalendarEvent {
   final String? category;
   final String? assigneeName;
   final bool? isOwner;
+  final bool? isCompleted;
 
   const _CalendarEvent(
     this.type, 
@@ -1562,6 +1827,7 @@ class _CalendarEvent {
     this.category,
     this.assigneeName,
     this.isOwner,
+    this.isCompleted,
   });
 }
 

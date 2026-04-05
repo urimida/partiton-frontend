@@ -162,11 +162,8 @@ static const String baseUrl = 'http://localhost:8080/api';
 
 예시:
 ```dart
-// partition_service.dart
-Future<List<PartitionModel>> getPartitions() async {
-  final response = await _apiClient.get(AppConfig.partitionsEndpoint);
-  // ...
-}
+// calendar_service.dart 등 — AppConfig에 정의된 경로 사용
+final response = await _apiClient.get(AppConfig.monthlyCalendarEndpoint);
 ```
 
 ## 상태 관리
@@ -183,10 +180,9 @@ Future<List<PartitionModel>> getPartitions() async {
 
 **주요 라우트:**
 - `/login`: 로그인 화면
-- `/register`: 회원가입 화면
-- `/partitions`: 파티션 목록
-- `/partitions/:id`: 파티션 상세
+- `/partitions`: 메인 탭(홈·공용소비 등) — `PartitionMainScreen`
 - `/settings`: 설정 화면
+- (그룹·온보딩 등은 `AppRouter` 참고)
 
 ## 개발 가이드
 

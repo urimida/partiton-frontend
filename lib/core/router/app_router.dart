@@ -107,7 +107,9 @@ class _AuthGuardState extends State<_AuthGuard> {
   void initState() {
     super.initState();
     _checkAuth();
-  }  Future<void> _checkAuth() async {
+  }
+
+  Future<void> _checkAuth() async {
     final authService = AuthService();
     final isAuth = await authService.isAuthenticated();
 

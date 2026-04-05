@@ -19,6 +19,13 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
     with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
 
+  /// 마우스·트랙패드 호버, 또는 손가락을 바 위에 댄 동안 글로우
+  bool _navBarHovered = false;
+  bool _navBarPointerOnBar = false;
+
+  bool get _navBarGlow =>
+      _navBarHovered || _navBarPointerOnBar;
+
   final List<Widget> _screens = [
     const PartitionHomeScreen(),
     const PartitionSharedExpenseScreen(),
@@ -59,7 +66,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   @override
   Widget build(BuildContext context) {
     final isHomeScreen = _currentIndex == 0;
-    
+
     return Stack(
       children: [
         // 전 화면에 깔리는 공통 배경
@@ -68,7 +75,6 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
             'assets/images/background.png',
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) {
-              // 이미지 로드 실패 시 대체 배경색
               return Container(color: Colors.black);
             },
           ),
@@ -84,34 +90,80 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
           backgroundColor: Colors.transparent,
           extendBody: true,
           extendBodyBehindAppBar: true,
-          body: _currentIndex == 1
-              ? _screens[_currentIndex] // 공용 소비 화면은 padding 없이
-              : Padding(
-                  padding: EdgeInsets.only(
-                    top: MediaQuery.of(context).padding.top +
-                        (isHomeScreen ? 0 : kToolbarHeight),
-                    bottom: 140, // 네비게이션 바 높이만큼 하단 패딩
-                  ),
-                  child: _screens[_currentIndex],
-                ),
+          // 공용소비(1): 헤더를 화면 최상단에 붙이기 위해 바깥 top 패딩 없음 — SafeArea는
+          // `PartitionSharedExpenseScreen` 헤더 안에서 처리. 하단 140은 리포트·게시판만.
+          body: Padding(
+            padding: EdgeInsets.only(
+              top: _currentIndex == 1
+                  ? 0
+                  : MediaQuery.of(context).padding.top +
+                      (_currentIndex == 0 ? 0 : kToolbarHeight),
+              bottom: _currentIndex == 1 ? 0 : 140,
+            ),
+            child: _screens[_currentIndex],
+          ),
           bottomNavigationBar: SafeArea(
             top: false,
             bottom: false,
-            child: SizedBox(
-              height: 150,
-              child: Stack(
-                clipBehavior: Clip.none,
-                alignment: Alignment.topCenter,
-                children: [
-                  Positioned(
-                    top: 35,
-                    left: 0,
-                    right: 0,
-                    child: ClipPath(
-                      clipper: _BottomNavClipper(),
-                      child: SizedBox(
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (_) => setState(() => _navBarPointerOnBar = true),
+              onPointerUp: (_) => setState(() => _navBarPointerOnBar = false),
+              onPointerCancel: (_) =>
+                  setState(() => _navBarPointerOnBar = false),
+              child: MouseRegion(
+                onEnter: (_) => setState(() => _navBarHovered = true),
+                onExit: (_) => setState(() => _navBarHovered = false),
+                child: SizedBox(
+                  height: 150,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.topCenter,
+                    children: [
+                      // 글래스 바와 동일 위치·크기·클립 (35 + 121 = 하단 영역과 일치)
+                      Positioned(
+                        top: 35,
+                        left: 0,
+                        right: 0,
                         height: 121,
-                        child: GlassmorphismWidget(
+                        child: ClipPath(
+                          clipper: _BottomNavClipper(),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 260),
+                            curve: Curves.easeOutCubic,
+                            width: double.infinity,
+                            height: 121,
+                            decoration: BoxDecoration(
+                              color: Colors.transparent,
+                              border: Border.all(
+                                width: 1,
+                                color: _navBarGlow
+                                    ? Colors.white.withOpacity(0.48)
+                                    : Colors.transparent,
+                              ),
+                              boxShadow: _navBarGlow
+                                  ? [
+                                      BoxShadow(
+                                        color: Colors.white.withOpacity(0.22),
+                                        blurRadius: 14,
+                                        spreadRadius: -6,
+                                        offset: Offset.zero,
+                                      ),
+                                    ]
+                                  : const [],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 35,
+                        left: 0,
+                        right: 0,
+                        child: ClipPath(
+                          clipper: _BottomNavClipper(),
+                          child: SizedBox(
+                            height: 121,
+                            child: GlassmorphismWidget(
                           borderRadius: BorderRadius.circular(24),
                           backgroundOpacity: 0.4,
                           showStroke: true,
@@ -196,7 +248,8 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                               ? AnimatedBuilder(
                                   animation: _glowAnimation!,
                                   builder: (context, _) {
-                                    final double glow = 0.7 + (_glowAnimation!.value * 0.3);
+                                    final double glow =
+                                        0.7 + (_glowAnimation!.value * 0.3);
                                     return Container(
                                       alignment: Alignment.center,
                                       decoration: BoxDecoration(
@@ -204,8 +257,10 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                                           center: const Alignment(0.0, 0.0),
                                           radius: 0.85,
                                           colors: [
-                                            Color.fromRGBO(255, 242, 215, 0.9 * glow),
-                                            Color.fromRGBO(251, 218, 158, 0.55 * glow),
+                                            Color.fromRGBO(
+                                                255, 242, 215, 0.9 * glow),
+                                            Color.fromRGBO(
+                                                251, 218, 158, 0.55 * glow),
                                             Color.fromRGBO(77, 101, 119, 0.18),
                                             Colors.transparent,
                                           ],
@@ -235,7 +290,9 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                       ),
                     ),
                   ),
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -250,7 +307,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
     required int index,
   }) {
     final isSelected = _currentIndex == index;
-    
+
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -293,7 +350,7 @@ class _BottomNavClipper extends CustomClipper<Path> {
     const double notchRadius = 30;
     const double notchWidth = 104;
     const double notchHeight = 60;
-    const double notchOffset = 6; // how far below the top edge the notch dips
+    const double notchOffset = 6;
 
     final Path base = Path()
       ..addRRect(
@@ -321,4 +378,3 @@ class _BottomNavClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
-

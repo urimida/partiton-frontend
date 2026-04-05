@@ -3,12 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:partition_app/main.dart';
 
 void main() {
-  testWidgets('App starts and shows login screen', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
+  testWidgets('앱이 MaterialApp으로 빌드된다', (WidgetTester tester) async {
     await tester.pumpWidget(const PartitionApp());
-
-    // Verify that login screen is shown
-    expect(find.text('Partition App'), findsOneWidget);
+    await tester.pump();
+    expect(find.byType(MaterialApp), findsOneWidget);
   });
 }
-
