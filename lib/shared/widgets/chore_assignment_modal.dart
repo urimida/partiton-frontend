@@ -234,8 +234,8 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
                         '집안일 중복 배정',
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
                           fontFamily: 'Pretendard Variable',
                         ),
                       ),
@@ -496,10 +496,10 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Colors.white, // #FFF
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
                                 fontFamily: 'Pretendard Variable',
-                                height: 0.7, // line-height: 14px / 20px = 70%
+                                height: 1.15,
                               ),
                             ),
                           const SizedBox(height: 8),
@@ -1075,8 +1075,8 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                         _getMonthYearText(),
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 21, // 14 * 1.5 = 21
-                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
                           fontFamily: 'Pretendard Variable',
                         ),
                       ),

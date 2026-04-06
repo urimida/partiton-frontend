@@ -66,6 +66,8 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   @override
   Widget build(BuildContext context) {
     final isHomeScreen = _currentIndex == 0;
+    final fullBleedBody =
+        _currentIndex == 1 || _currentIndex == 2 || _currentIndex == 3;
 
     return Stack(
       children: [
@@ -80,7 +82,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
           ),
         ),
         Scaffold(
-          appBar: (isHomeScreen || _currentIndex == 1)
+          appBar: (isHomeScreen || fullBleedBody)
               ? null
               : AppBar(
                   title: Text(_titles[_currentIndex]),
@@ -90,15 +92,15 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
           backgroundColor: Colors.transparent,
           extendBody: true,
           extendBodyBehindAppBar: true,
-          // 공용소비(1): 헤더를 화면 최상단에 붙이기 위해 바깥 top 패딩 없음 — SafeArea는
-          // `PartitionSharedExpenseScreen` 헤더 안에서 처리. 하단 140은 리포트·게시판만.
+          // 공용소비(1)·게시판(3): 커스텀 헤더를 최상단에 붙이기 위해 바깥 top 패딩 없음.
+          // 하단 140은 홈·리포트만.
           body: Padding(
             padding: EdgeInsets.only(
-              top: _currentIndex == 1
+              top: fullBleedBody
                   ? 0
                   : MediaQuery.of(context).padding.top +
                       (_currentIndex == 0 ? 0 : kToolbarHeight),
-              bottom: _currentIndex == 1 ? 0 : 140,
+              bottom: fullBleedBody ? 0 : 140,
             ),
             child: _screens[_currentIndex],
           ),

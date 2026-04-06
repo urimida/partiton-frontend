@@ -164,10 +164,10 @@ class _ScheduleRegistrationModalState extends State<ScheduleRegistrationModal> {
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
                       fontFamily: 'Pretendard Variable',
-                      height: 0.7, // 14px / 20px = 70%
+                      height: 1.15,
                     ),
                   ),
                   const SizedBox(height: 6),

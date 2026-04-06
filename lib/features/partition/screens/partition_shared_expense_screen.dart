@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:ui';
 import 'package:partition_app/features/partition/models/shared_expense_table_item.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_filter_chip.dart';
@@ -6,6 +7,7 @@ import 'package:partition_app/features/partition/widgets/shared_expense_manual_m
 import 'package:partition_app/features/partition/widgets/utility_bill_add_modal.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_item_detail_sheet.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
+import 'package:partition_app/shared/widgets/glassmorphic_date_picker.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 
@@ -209,7 +211,7 @@ class _PartitionSharedExpenseScreenState
     final DateTime? picked = await showDialog<DateTime>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => _GlassmorphicDatePicker(
+      builder: (context) => GlassmorphicDatePicker(
         initialDate: initialDate,
         firstDate: today,
         lastDate: maxDate,
@@ -242,13 +244,12 @@ class _PartitionSharedExpenseScreenState
   }
 
   /// 메인 글래스 카드(제목~표~페이지) — HUG 레이아웃에 맞춘 대략 높이 (칩 간격 계산용)
-  double _estimateMainCardContentHeightForFilter(int filterIndex) {
-    final isUtility = filterIndex == 1;
+  double _estimateMainCardContentHeightForFilter(int _) {
     const outerPadV = 20.0 + 18.0;
     const titleBlock = 26.0 + _spacingMedium;
     const dateRowH = 52.0;
-    final utilityBlock =
-        isUtility ? (_spacingMedium + 46.0) : 0.0;
+    // 물품·공과금 모두 날짜 아래에 정산하기 버튼 한 줄 (동일 높이)
+    const settlementButtonBlock = _spacingMedium + 46.0;
     const beforeTable = _spacingLarge;
     // 표 패널 + 페이지 컨트롤 + 표 바깥(오른쪽) 추가·수정 원형 줄
     const tablePanel = 16.0 +
@@ -263,16 +264,16 @@ class _PartitionSharedExpenseScreenState
     return outerPadV +
         titleBlock +
         dateRowH +
-        utilityBlock +
+        settlementButtonBlock +
         beforeTable +
         tablePanel;
   }
 
   /// 칩 아래(카드+하단 버튼) 고정 블록 높이 — 칩 위·아래 대칭 여백 계산용
-  /// 공과금: 하단 버튼 1개(카드 안 '공과금 정산하기' 별도) / 물품: 하단 2개
+  /// 정산하기는 카드 안(날짜 아래) / 하단 액션은 탭당 버튼 1개
   double _estimatedBelowChipsContentHeightForFilter(int filterIndex) {
     final cardH = _estimateMainCardContentHeightForFilter(filterIndex);
-    final actionCount = filterIndex == 1 ? 1 : 2;
+    final actionCount = 1;
     final actionsH =
         46 * actionCount + _spacingSmall * (actionCount > 1 ? actionCount - 1 : 0);
     return cardH + _spacingSmall + actionsH + 12;
@@ -388,9 +389,17 @@ class _PartitionSharedExpenseScreenState
                           style: TextStyle(
                             color: Colors.white,
                             fontFamily: 'Pretendard Variable',
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
                             height: 1.1,
+                            letterSpacing: -0.2,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withOpacity(0.35),
+                                offset: const Offset(0, 0.5),
+                                blurRadius: 2,
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -485,10 +494,20 @@ class _PartitionSharedExpenseScreenState
             child: Center(
               child: Text(
                 isUtility ? '공용 소비 공과금 관리' : '공용 소비 물품 관리',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'Pretendard Variable',
+                  height: 1.2,
+                  letterSpacing: -0.15,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black.withOpacity(0.28),
+                      offset: const Offset(0, 0.5),
+                      blurRadius: 2,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -499,7 +518,15 @@ class _PartitionSharedExpenseScreenState
             const SizedBox(height: _spacingMedium),
             PrimaryButton(
               label: '공과금 정산하기',
+              enabled: !_tableSelectionMode,
               onPressed: _showUtilityBillSettlementFlow,
+            ),
+          ] else ...[
+            const SizedBox(height: _spacingMedium),
+            PrimaryButton(
+              label: '공용 소비 물품 정산하기',
+              enabled: !_tableSelectionMode,
+              onPressed: _showSharedExpenseSettlementFlow,
             ),
           ],
           const SizedBox(height: _spacingLarge),
@@ -546,12 +573,12 @@ class _PartitionSharedExpenseScreenState
               ],
             ),
           ),
-          // 표 아래: 왼쪽 = 선택 모드 진입·종료, 오른쪽 = 편집 또는 전체선택·삭제·정산
+          // 표 아래: 왼쪽 = 선택 모드 진입·종료, 오른쪽 = 편집 또는 전체선택·삭제·정산 표시
+          // 가로 패딩은 표 FrostedPanel(6)과 같게 — 오른쪽 끝 버튼이 표 수량 열과 세로 정렬
           const SizedBox(height: 12),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Tooltip(
@@ -567,9 +594,10 @@ class _PartitionSharedExpenseScreenState
                         : _enterTableSelectionMode,
                   ),
                 ),
+                const Spacer(),
                 if (!_tableSelectionMode)
                   Tooltip(
-                    message: isUtility ? '공과금 내역 추가·수정' : '공용 소비 내역 추가·수정',
+                    message: isUtility ? '공과금 내역 관리' : '공용 소비 내역 관리',
                     child: _buildCircleArrow(
                       Icons.edit_rounded,
                       onTap: _showManualSharedExpenseModal,
@@ -577,24 +605,27 @@ class _PartitionSharedExpenseScreenState
                   )
                 else
                   Expanded(
-                    child: Align(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
                       alignment: Alignment.centerRight,
-                      child: Wrap(
-                        alignment: WrapAlignment.end,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 4,
-                        runSpacing: 4,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           _buildSelectionActionChip(
                             '전체선택',
                             _selectAllRowsInFilter,
                           ),
+                          const SizedBox(width: 6),
                           _buildSelectionActionChip(
                             '삭제',
                             () => _deleteSelectedRows(),
                           ),
+                          const SizedBox(width: 6),
                           _buildSelectionActionChip(
-                            selectionAllSettled ? '정산 취소' : '정산',
+                            selectionAllSettled
+                                ? '정산 해제하기'
+                                : '정산 표시하기',
                             selectionAllSettled
                                 ? _cancelSettlementSelectedRows
                                 : _settleSelectedRows,
@@ -626,11 +657,6 @@ class _PartitionSharedExpenseScreenState
         PrimaryButton(
           label: '파티션 AI 영수증 인식',
           onPressed: _showAiReceiptRecognitionFlow,
-        ),
-        const SizedBox(height: _spacingSmall),
-        PrimaryButton(
-          label: '공용 소비 물품 정산하기',
-          onPressed: _showSharedExpenseSettlementFlow,
         ),
       ];
     }
@@ -733,12 +759,16 @@ class _PartitionSharedExpenseScreenState
 
     final isUtility = _filterIndex == 1;
     final lastHeaderLabel = isUtility ? '비고' : '수량';
+    // 공과금: 항목명 짧음·비고 넓음. 물품: 내용 폭 축소·날짜(YY.MM.DD.) 폭 확대
+    const contentFlex = 4;
+    final dateFlex = isUtility ? 2 : 3;
+    final lastColFlex = isUtility ? 3 : 2;
 
-    // 내용 : 날짜 : 금액 : 수량 — 날짜 넓게·금액 약간 좁게, 수량은 가로 한 줄
-    const padContent = 6.0;
-    const padDate = 4.0;
-    const padAmount = 4.0;
-    const padQty = 4.0;
+    // 내용 : 날짜 : 금액 : 마지막열
+    const padContent = 4.0;
+    const padDate = 3.0;
+    const padAmount = 3.0;
+    const padQty = 3.0;
 
     const headerRowHeight = 34.0;
     return SizedBox(
@@ -746,33 +776,19 @@ class _PartitionSharedExpenseScreenState
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          // 선택 모드에서도 행 체크박스 열 너비만 맞추고, 상단 체크 레이블은 표시하지 않음
           if (selectionMode) ...[
             Expanded(
               flex: 1,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 1),
-                child: FrostedPanel(
-                  borderRadius: BorderRadius.circular(20),
-                  backgroundOpacity: 0.4,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
-                  child: const Padding(
-                    padding: EdgeInsets.only(top: 2),
-                    child: Center(
-                      child: Icon(
-                        Icons.check_box_outlined,
-                        size: 14,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
+                child: const SizedBox.shrink(),
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 3),
           ],
           Expanded(
-            flex: 3,
+            flex: contentFlex,
             child: Padding(
               // 표 제목 캡슐만 좌우 1px씩 좁게 (데이터 행과 동일 레이아웃 유지)
               padding: const EdgeInsets.symmetric(horizontal: 1),
@@ -793,9 +809,9 @@ class _PartitionSharedExpenseScreenState
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           Expanded(
-            flex: 3,
+            flex: dateFlex,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 1),
               child: FrostedPanel(
@@ -815,7 +831,7 @@ class _PartitionSharedExpenseScreenState
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           Expanded(
             flex: 3,
             child: Padding(
@@ -837,9 +853,9 @@ class _PartitionSharedExpenseScreenState
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           Expanded(
-            flex: 2,
+            flex: lastColFlex,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 1),
               child: FrostedPanel(
@@ -966,21 +982,43 @@ class _PartitionSharedExpenseScreenState
     );
   }
 
+  /// 선택 모드 — 텍스트 너비에 맞춘 작은 글래스 pill (한 줄 배치용, FrostedPanel 무한 너비 방지)
   Widget _buildSelectionActionChip(String label, VoidCallback onPressed) {
-    return TextButton(
-      onPressed: onPressed,
-      style: TextButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        minimumSize: Size.zero,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        foregroundColor: Colors.white,
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontFamily: 'Pretendard Variable',
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(14),
+        splashColor: Colors.white.withOpacity(0.12),
+        highlightColor: Colors.white.withOpacity(0.06),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                color: Colors.white.withOpacity(0.08),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.85),
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard Variable',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1074,7 +1112,7 @@ class _PartitionSharedExpenseScreenState
     }
   }
 
-  /// 선택이 비어 있지 않고, 모두 정산 완료(`manuallySettled`)인 경우에만 true — 버튼을「정산 취소」로 쓸 때
+  /// 선택이 비어 있지 않고, 모두 정산 완료(`manuallySettled`)인 경우에만 true — 버튼을「정산 해제하기」로 쓸 때
   bool _selectedRowsAreAllSettled() {
     if (_selectedRowIndices.isEmpty) return false;
     final list = _itemsForCurrentFilter();
@@ -1155,7 +1193,7 @@ class _PartitionSharedExpenseScreenState
     );
   }
 
-  /// 공용 소비 물품 정산 — 항목 선택 → 1인당 금액 안내 (더미)
+  /// 공용 소비 물품 정산 — 항목 선택 → 정산할 인원 선택 (더미)
   Future<void> _showSharedExpenseSettlementFlow() async {
     await showDialog<void>(
       context: context,
@@ -1251,17 +1289,23 @@ class _SharedExpenseTableBody extends StatelessWidget {
     SharedExpenseTableItem item,
     int globalIndex,
   ) {
-    final label = item.displayLabel;
-    final shouldTruncate = label.length > 5;
-    final displayText =
-        shouldTruncate ? '${label.substring(0, 5)}...' : label;
+    // 내용 열: 카테고리 제외 실제 품목명만 (분류는 상세 시트에서)
+    final label = item.name;
     final rowStyle = _styleFor(item);
 
     // 헤더 셀과 동일한 가로 패딩·flex (_buildTableHeader와 맞출 것)
-    const padContent = 6.0;
-    const padDate = 4.0;
-    const padAmount = 4.0;
-    const padQty = 4.0;
+    const padContent = 4.0;
+    const padDate = 3.0;
+    const padAmount = 3.0;
+    const padQty = 3.0;
+    const contentFlex = 4;
+    final dateFlex = isUtility ? 2 : 3;
+    final lastColFlex = isUtility ? 3 : 2;
+
+    /// 물품 품목명: 6자 초과 시 앞 6자 + … (공과금은 전체 표시용 FittedBox)
+    final displayName = !isUtility && label.length > 6
+        ? '${label.substring(0, 6)}...'
+        : label;
 
     /// 금액·수량 등 긴 문자열용 (날짜는 축소 없이 고정 글자 크기)
     Widget fittedCell(String text, TextStyle style) {
@@ -1319,10 +1363,10 @@ class _SharedExpenseTableBody extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 3),
           ],
           Expanded(
-            flex: 3,
+            flex: contentFlex,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: padContent),
               child: Material(
@@ -1332,35 +1376,51 @@ class _SharedExpenseTableBody extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   child: SizedBox(
                     width: double.infinity,
-                    child: Text(
-                      displayText,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: rowStyle,
-                    ),
+                    child: isUtility
+                        ? FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.center,
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              softWrap: false,
+                              textAlign: TextAlign.center,
+                              style: rowStyle,
+                            ),
+                          )
+                        : Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: rowStyle,
+                          ),
                   ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           Expanded(
-            flex: 3,
+            flex: dateFlex,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: padDate),
               child: Center(
-                child: Text(
-                  item.date,
-                  maxLines: 1,
-                  softWrap: false,
-                  textAlign: TextAlign.center,
-                  style: rowStyle,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.center,
+                  child: Text(
+                    item.date,
+                    maxLines: 1,
+                    softWrap: false,
+                    textAlign: TextAlign.center,
+                    style: rowStyle,
+                  ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           Expanded(
             flex: 3,
             child: Padding(
@@ -1368,9 +1428,9 @@ class _SharedExpenseTableBody extends StatelessWidget {
               child: fittedCell(item.amount, rowStyle),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           Expanded(
-            flex: 2,
+            flex: lastColFlex,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: padQty),
               child: fittedCell(
@@ -1567,6 +1627,102 @@ String _formatKrwSettlement(int n) {
   return buf.toString();
 }
 
+double _settlementMemberAmountFieldWidth({
+  required String digits,
+  required TextStyle style,
+}) {
+  final t = digits.isEmpty ? '0' : digits;
+  final painter = TextPainter(
+    text: TextSpan(text: t, style: style),
+    textDirection: TextDirection.ltr,
+    maxLines: 1,
+  )..layout(minWidth: 0, maxWidth: double.infinity);
+  // 컨테이너 좌우 패딩(4+4) + 필드 안쪽(2+2) + 커서 여유
+  const extra = 14.0;
+  return (painter.size.width + extra).clamp(24.0, 128.0);
+}
+
+/// 정산 멤버 행 오른쪽: 숫자만 입력, `원`은 필드 밖 고정, 폭은 글자에 맞춤
+Widget _buildSettlementMemberAmountTrailing({
+  required TextEditingController controller,
+  required bool selected,
+  required VoidCallback onAmountChanged,
+}) {
+  final amountStyle = TextStyle(
+    color: selected ? Colors.white : Colors.white.withOpacity(0.45),
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    fontFamily: 'Pretendard Variable',
+    height: 1.05,
+  );
+  final hintStyle = TextStyle(
+    color: Colors.white.withOpacity(0.35),
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    fontFamily: 'Pretendard Variable',
+    height: 1.05,
+  );
+  final w = _settlementMemberAmountFieldWidth(
+    digits: controller.text,
+    style: amountStyle,
+  );
+
+  return Expanded(
+    child: Align(
+      alignment: Alignment.centerRight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: w,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(selected ? 0.2 : 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: Colors.white.withOpacity(selected ? 0.45 : 0.22),
+                ),
+              ),
+              child: TextField(
+                controller: controller,
+                enabled: selected,
+                onChanged: (_) => onAmountChanged(),
+                textAlign: TextAlign.right,
+                textAlignVertical: TextAlignVertical.center,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                style: amountStyle,
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                  hintText: selected ? null : '0',
+                  hintStyle: hintStyle,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '원',
+            style: TextStyle(
+              color: selected
+                  ? Colors.white.withOpacity(0.95)
+                  : Colors.white.withOpacity(0.4),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              fontFamily: 'Pretendard Variable',
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 class _SettlementSelectableLine {
   final String name;
   final int amountWon;
@@ -1579,7 +1735,7 @@ class _SettlementSelectableLine {
   });
 }
 
-/// 공용 소비 물품 정산: 기간·항목 선택 → 정산할 사람 선택 → 완료 모달
+/// 공용 소비 물품 정산: 기간·항목 선택 → 정산할 인원 선택 → 완료 모달
 class _SharedExpenseSettlementFlowDialog extends StatefulWidget {
   const _SharedExpenseSettlementFlowDialog();
 
@@ -1590,7 +1746,7 @@ class _SharedExpenseSettlementFlowDialog extends StatefulWidget {
 
 class _SharedExpenseSettlementFlowDialogState
     extends State<_SharedExpenseSettlementFlowDialog> {
-  /// 0: 항목 선택, 1: 정산할 사람
+  /// 0: 항목 선택, 1: 정산할 인원
   int _step = 0;
 
   late DateTime _rangeStart;
@@ -1599,6 +1755,7 @@ class _SharedExpenseSettlementFlowDialogState
 
   List<String> _memberNames = [];
   List<bool> _memberSelected = [];
+  final List<TextEditingController> _memberAmountCtrls = [];
   bool _loadingMembers = true;
 
   final AuthService _authService = AuthService();
@@ -1616,6 +1773,35 @@ class _SharedExpenseSettlementFlowDialogState
     _loadMembers();
   }
 
+  @override
+  void dispose() {
+    for (final c in _memberAmountCtrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _ensureMemberAmountControllers() {
+    while (_memberAmountCtrls.length < _memberNames.length) {
+      _memberAmountCtrls.add(TextEditingController());
+    }
+    while (_memberAmountCtrls.length > _memberNames.length) {
+      _memberAmountCtrls.removeLast().dispose();
+    }
+  }
+
+  void _syncMemberAmountFields() {
+    _ensureMemberAmountControllers();
+    final per = _getGoodsPerPersonWon();
+    for (var i = 0; i < _memberNames.length; i++) {
+      if (_memberSelected[i]) {
+        _memberAmountCtrls[i].text = per > 0 ? '$per' : '0';
+      } else {
+        _memberAmountCtrls[i].text = '0';
+      }
+    }
+  }
+
   Future<void> _loadMembers() async {
     final names = await _authService.fetchHouseholdMemberNames();
     if (!mounted) return;
@@ -1623,6 +1809,8 @@ class _SharedExpenseSettlementFlowDialogState
       _memberNames = names;
       _memberSelected = List<bool>.filled(names.length, true);
       _loadingMembers = false;
+      _ensureMemberAmountControllers();
+      _syncMemberAmountFields();
     });
   }
 
@@ -1663,7 +1851,7 @@ class _SharedExpenseSettlementFlowDialogState
     final DateTime? picked = await showDialog<DateTime>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => _GlassmorphicDatePicker(
+      builder: (context) => GlassmorphicDatePicker(
         initialDate: initialDate,
         firstDate: today,
         lastDate: maxDate,
@@ -1696,29 +1884,31 @@ class _SharedExpenseSettlementFlowDialogState
         child: FrostedPanel(
           borderRadius: BorderRadius.circular(20),
           backgroundOpacity: 0.08,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
                 label,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.65),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                   fontFamily: 'Pretendard Variable',
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                _formatDate(date),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Pretendard Variable',
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  _formatDate(date),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Pretendard Variable',
+                  ),
                 ),
               ),
             ],
@@ -1787,7 +1977,7 @@ class _SharedExpenseSettlementFlowDialogState
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900,
                       fontFamily: 'Pretendard Variable',
                     ),
                   ),
@@ -1806,7 +1996,7 @@ class _SharedExpenseSettlementFlowDialogState
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 3),
             Text(
               '어떤 소비 물품을 정산하실 건가요?',
               textAlign: TextAlign.center,
@@ -1815,7 +2005,7 @@ class _SharedExpenseSettlementFlowDialogState
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 fontFamily: 'Pretendard Variable',
-                height: 1.35,
+                height: 1.22,
               ),
             ),
             const SizedBox(height: 20),
@@ -1906,7 +2096,10 @@ class _SharedExpenseSettlementFlowDialogState
                   );
                   return;
                 }
-                setState(() => _step = 1);
+                setState(() {
+                  _step = 1;
+                  _syncMemberAmountFields();
+                });
               },
             ),
           ],
@@ -1915,39 +2108,58 @@ class _SharedExpenseSettlementFlowDialogState
     );
   }
 
-  Widget _buildMemberRow(int index) {
+  Widget _buildMemberRow(BuildContext context, int index) {
     final name = _memberNames[index];
     final sel = _memberSelected[index];
+    final maxNameW = (MediaQuery.sizeOf(context).width - 32) * 0.38;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: GestureDetector(
-        onTap: () => setState(() => _memberSelected[index] = !sel),
-        behavior: HitTestBehavior.opaque,
-        child: FrostedPanel(
-          borderRadius: BorderRadius.circular(22),
-          backgroundOpacity: 0.08,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                sel ? Icons.check_circle_rounded : Icons.circle_outlined,
-                color: sel ? Colors.white : Colors.white.withOpacity(0.45),
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'Pretendard Variable',
+      child: FrostedPanel(
+        borderRadius: BorderRadius.circular(22),
+        backgroundOpacity: 0.08,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            GestureDetector(
+              onTap: () => setState(() {
+                _memberSelected[index] = !sel;
+                _syncMemberAmountFields();
+              }),
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    sel ? Icons.check_circle_rounded : Icons.circle_outlined,
+                    color:
+                        sel ? Colors.white : Colors.white.withOpacity(0.45),
+                    size: 24,
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxNameW),
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            _buildSettlementMemberAmountTrailing(
+              controller: _memberAmountCtrls[index],
+              selected: sel,
+              onAmountChanged: () => setState(() {}),
+            ),
+          ],
         ),
       ),
     );
@@ -1983,12 +2195,12 @@ class _SharedExpenseSettlementFlowDialogState
                 ),
                 const Expanded(
                   child: Text(
-                    '정산할 사람 선택',
+                    '정산할 인원 선택',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
                       fontFamily: 'Pretendard Variable',
                       height: 1.2,
                     ),
@@ -2009,9 +2221,9 @@ class _SharedExpenseSettlementFlowDialogState
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 3),
             Text(
-              '같은 그룹 멤버 중 정산에 참여할 사람을 선택하세요.\n'
+              '같은 그룹 멤버 중 정산에 참여할 인원을 선택하세요.\n'
               '(선택한 인원으로 N분의 1)',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -2019,7 +2231,7 @@ class _SharedExpenseSettlementFlowDialogState
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 fontFamily: 'Pretendard Variable',
-                height: 1.35,
+                height: 1.22,
               ),
             ),
             const SizedBox(height: 16),
@@ -2045,7 +2257,10 @@ class _SharedExpenseSettlementFlowDialogState
                 ),
               ),
               const SizedBox(height: 14),
-              ...List.generate(_memberNames.length, _buildMemberRow),
+              ...List.generate(
+                _memberNames.length,
+                (i) => _buildMemberRow(context, i),
+              ),
             ],
             const SizedBox(height: 20),
             PrimaryButton(
@@ -2055,7 +2270,7 @@ class _SharedExpenseSettlementFlowDialogState
                 if (_getSelectedMemberCount() == 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('정산에 참여할 사람을 한 명 이상 선택해주세요.'),
+                      content: Text('정산에 참여할 인원을 한 명 이상 선택해주세요.'),
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
@@ -2102,7 +2317,7 @@ class _UtilitySelectableLine {
   _UtilitySelectableLine({required this.item}) : selected = true;
 }
 
-/// 공과금 정산: 기간·항목 선택 → 정산할 사람 선택 → 완료 모달
+/// 공과금 정산: 기간·항목 선택 → 정산할 인원 선택 → 완료 모달
 class _UtilityBillSettlementFlowDialog extends StatefulWidget {
   final List<SharedExpenseTableItem> items;
 
@@ -2124,6 +2339,7 @@ class _UtilityBillSettlementFlowDialogState
 
   List<String> _memberNames = [];
   List<bool> _memberSelected = [];
+  final List<TextEditingController> _memberAmountCtrls = [];
   bool _loadingMembers = true;
 
   final AuthService _authService = AuthService();
@@ -2140,6 +2356,35 @@ class _UtilityBillSettlementFlowDialogState
     _loadMembers();
   }
 
+  @override
+  void dispose() {
+    for (final c in _memberAmountCtrls) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _ensureMemberAmountControllers() {
+    while (_memberAmountCtrls.length < _memberNames.length) {
+      _memberAmountCtrls.add(TextEditingController());
+    }
+    while (_memberAmountCtrls.length > _memberNames.length) {
+      _memberAmountCtrls.removeLast().dispose();
+    }
+  }
+
+  void _syncMemberAmountFields() {
+    _ensureMemberAmountControllers();
+    for (var i = 0; i < _memberNames.length; i++) {
+      if (_memberSelected[i]) {
+        _memberAmountCtrls[i].text =
+            _perPersonWon > 0 ? '$_perPersonWon' : '0';
+      } else {
+        _memberAmountCtrls[i].text = '0';
+      }
+    }
+  }
+
   Future<void> _loadMembers() async {
     final names = await _authService.fetchHouseholdMemberNames();
     if (!mounted) return;
@@ -2148,6 +2393,8 @@ class _UtilityBillSettlementFlowDialogState
       _memberSelected = List<bool>.filled(names.length, true);
       _loadingMembers = false;
       _recalculatePerPerson();
+      _ensureMemberAmountControllers();
+      _syncMemberAmountFields();
     });
   }
 
@@ -2229,7 +2476,7 @@ class _UtilityBillSettlementFlowDialogState
     final DateTime? picked = await showDialog<DateTime>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => _GlassmorphicDatePicker(
+      builder: (context) => GlassmorphicDatePicker(
         initialDate: initialDate,
         firstDate: today,
         lastDate: maxDate,
@@ -2262,29 +2509,31 @@ class _UtilityBillSettlementFlowDialogState
         child: FrostedPanel(
           borderRadius: BorderRadius.circular(20),
           backgroundOpacity: 0.08,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
                 label,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.65),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                   fontFamily: 'Pretendard Variable',
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                _formatDate(date),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Pretendard Variable',
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  _formatDate(date),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Pretendard Variable',
+                  ),
                 ),
               ),
             ],
@@ -2353,7 +2602,7 @@ class _UtilityBillSettlementFlowDialogState
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900,
                       fontFamily: 'Pretendard Variable',
                     ),
                   ),
@@ -2372,7 +2621,7 @@ class _UtilityBillSettlementFlowDialogState
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 3),
             Text(
               '어떤 공과금을 정산하실 건가요?',
               textAlign: TextAlign.center,
@@ -2381,7 +2630,7 @@ class _UtilityBillSettlementFlowDialogState
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 fontFamily: 'Pretendard Variable',
-                height: 1.35,
+                height: 1.22,
               ),
             ),
             const SizedBox(height: 20),
@@ -2494,6 +2743,7 @@ class _UtilityBillSettlementFlowDialogState
                 setState(() {
                   _recalculatePerPerson();
                   _step = 1;
+                  _syncMemberAmountFields();
                 });
               },
             ),
@@ -2503,42 +2753,59 @@ class _UtilityBillSettlementFlowDialogState
     );
   }
 
-  Widget _buildUtilityMemberRow(int index) {
+  Widget _buildUtilityMemberRow(BuildContext context, int index) {
     final name = _memberNames[index];
     final sel = _memberSelected[index];
+    final maxNameW = (MediaQuery.sizeOf(context).width - 32) * 0.38;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: GestureDetector(
-        onTap: () => setState(() {
-          _memberSelected[index] = !sel;
-          _recalculatePerPerson();
-        }),
-        behavior: HitTestBehavior.opaque,
-        child: FrostedPanel(
-          borderRadius: BorderRadius.circular(22),
-          backgroundOpacity: 0.08,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                sel ? Icons.check_circle_rounded : Icons.circle_outlined,
-                color: sel ? Colors.white : Colors.white.withOpacity(0.45),
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'Pretendard Variable',
+      child: FrostedPanel(
+        borderRadius: BorderRadius.circular(22),
+        backgroundOpacity: 0.08,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            GestureDetector(
+              onTap: () => setState(() {
+                _memberSelected[index] = !sel;
+                _recalculatePerPerson();
+                _syncMemberAmountFields();
+              }),
+              behavior: HitTestBehavior.opaque,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    sel ? Icons.check_circle_rounded : Icons.circle_outlined,
+                    color:
+                        sel ? Colors.white : Colors.white.withOpacity(0.45),
+                    size: 24,
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxNameW),
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            _buildSettlementMemberAmountTrailing(
+              controller: _memberAmountCtrls[index],
+              selected: sel,
+              onAmountChanged: () => setState(() {}),
+            ),
+          ],
         ),
       ),
     );
@@ -2573,12 +2840,12 @@ class _UtilityBillSettlementFlowDialogState
                 ),
                 const Expanded(
                   child: Text(
-                    '정산할 사람 선택',
+                    '정산할 인원 선택',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
                       fontFamily: 'Pretendard Variable',
                       height: 1.2,
                     ),
@@ -2599,9 +2866,9 @@ class _UtilityBillSettlementFlowDialogState
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 3),
             Text(
-              '같은 그룹 멤버 중 정산에 참여할 사람을 선택하세요.\n'
+              '같은 그룹 멤버 중 정산에 참여할 인원을 선택하세요.\n'
               '(선택한 인원으로 N분의 1)',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -2609,7 +2876,7 @@ class _UtilityBillSettlementFlowDialogState
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 fontFamily: 'Pretendard Variable',
-                height: 1.35,
+                height: 1.22,
               ),
             ),
             const SizedBox(height: 16),
@@ -2635,7 +2902,10 @@ class _UtilityBillSettlementFlowDialogState
                 ),
               ),
               const SizedBox(height: 14),
-              ...List.generate(_memberNames.length, _buildUtilityMemberRow),
+              ...List.generate(
+                _memberNames.length,
+                (i) => _buildUtilityMemberRow(context, i),
+              ),
             ],
             const SizedBox(height: 20),
             PrimaryButton(
@@ -2645,7 +2915,7 @@ class _UtilityBillSettlementFlowDialogState
                 if (_getSelectedMemberCount() == 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('정산에 참여할 사람을 한 명 이상 선택해주세요.'),
+                      content: Text('정산에 참여할 인원을 한 명 이상 선택해주세요.'),
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
@@ -2688,15 +2958,15 @@ class _UtilityBillSettlementFlowDialogState
 
 class _ExtractedReceiptLine {
   String name;
-  String date;
-  String amount;
-  String qty;
+  DateTime date;
+  int amountWon;
+  int qty;
   bool selected;
 
   _ExtractedReceiptLine({
     required this.name,
     required this.date,
-    required this.amount,
+    required this.amountWon,
     required this.qty,
     this.selected = true,
   });
@@ -2718,51 +2988,66 @@ class _AiReceiptRecognitionFlowDialogState
 
   late final List<_ExtractedReceiptLine> _lines;
 
+  /// 다이얼로그 닫기: 포커스 해제 후 다음 프레임에 pop 해 라이프사이클·의존성 assert 방지
+  void _closeReceiptFlowDialog() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).maybePop();
+    });
+  }
+
+  void _disposeEditControllerNextFrame(TextEditingController c) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      c.dispose();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _lines = [
       _ExtractedReceiptLine(
         name: '가위',
-        date: '2025.08.25.',
-        amount: '3000원',
-        qty: '1개',
+        date: DateTime(2025, 8, 25),
+        amountWon: 3000,
+        qty: 1,
       ),
       _ExtractedReceiptLine(
         name: '주방칼',
-        date: '2025.08.28.',
-        amount: '4000원',
-        qty: '1개',
+        date: DateTime(2025, 8, 28),
+        amountWon: 4000,
+        qty: 1,
       ),
       _ExtractedReceiptLine(
         name: '키친타올',
-        date: '2025.08.25.',
-        amount: '2500원',
-        qty: '2개',
+        date: DateTime(2025, 8, 25),
+        amountWon: 2500,
+        qty: 2,
       ),
       _ExtractedReceiptLine(
         name: '쓰레기봉투',
-        date: '2025.08.25.',
-        amount: '1800원',
-        qty: '1개',
+        date: DateTime(2025, 8, 25),
+        amountWon: 1800,
+        qty: 1,
       ),
       _ExtractedReceiptLine(
         name: '주방세제',
-        date: '2025.08.26.',
-        amount: '3200원',
-        qty: '1개',
+        date: DateTime(2025, 8, 26),
+        amountWon: 3200,
+        qty: 1,
       ),
       _ExtractedReceiptLine(
         name: '라면 5입',
-        date: '2025.08.27.',
-        amount: '4500원',
-        qty: '1개',
+        date: DateTime(2025, 8, 27),
+        amountWon: 4500,
+        qty: 1,
       ),
       _ExtractedReceiptLine(
         name: '우유 900ml',
-        date: '2025.08.28.',
-        amount: '3100원',
-        qty: '2개',
+        date: DateTime(2025, 8, 28),
+        amountWon: 3100,
+        qty: 2,
       ),
     ];
   }
@@ -2814,20 +3099,20 @@ class _AiReceiptRecognitionFlowDialogState
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 18,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                     fontFamily: 'Pretendard Variable',
                   ),
                 ),
               ),
               IconButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: _closeReceiptFlowDialog,
                 icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.9)),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 3),
           Text(
             '영수증을 촬영해 구매 내역을 등록하시겠어요?',
             textAlign: TextAlign.center,
@@ -2836,7 +3121,7 @@ class _AiReceiptRecognitionFlowDialogState
               fontSize: 15,
               fontWeight: FontWeight.w500,
               fontFamily: 'Pretendard Variable',
-              height: 1.4,
+              height: 1.22,
             ),
           ),
           const SizedBox(height: 28),
@@ -2862,7 +3147,7 @@ class _AiReceiptRecognitionFlowDialogState
             style: TextStyle(
               color: Colors.white,
               fontSize: 18,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w900,
               fontFamily: 'Pretendard Variable',
             ),
           ),
@@ -2886,7 +3171,7 @@ class _AiReceiptRecognitionFlowDialogState
           const SizedBox(height: 10),
           Center(
             child: TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: _closeReceiptFlowDialog,
               child: Text(
                 '취소',
                 style: TextStyle(
@@ -2902,23 +3187,277 @@ class _AiReceiptRecognitionFlowDialogState
     );
   }
 
-  Widget _buildExtractPill(String text) {
-    return Expanded(
-      child: FrostedPanel(
-        borderRadius: BorderRadius.circular(14),
-        backgroundOpacity: 0.06,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        child: Center(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+  String _formatExtractReceiptDate(DateTime d) {
+    return '${d.year}.${d.month.toString().padLeft(2, '0')}.${d.day.toString().padLeft(2, '0')}.';
+  }
+
+  Future<void> _editExtractLineName(int index) async {
+    final line = _lines[index];
+    final controller = TextEditingController(text: line.name);
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2C2C2E),
+        title: const Text(
+          '품목명',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Pretendard Variable',
+          ),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontFamily: 'Pretendard Variable',
+          ),
+          decoration: InputDecoration(
+            hintText: '텍스트로 입력',
+            hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white.withOpacity(0.35)),
+            ),
+            focusedBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white70),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              '취소',
+              style: TextStyle(color: Colors.white.withOpacity(0.75)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              '확인',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    final text = controller.text.trim();
+    _disposeEditControllerNextFrame(controller);
+    if (!mounted) return;
+    if (ok == true && text.isNotEmpty) {
+      setState(() => line.name = text);
+    }
+  }
+
+  Future<void> _editExtractLineDate(int index) async {
+    final line = _lines[index];
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final first = DateTime(2018, 1, 1);
+    final last = today.add(const Duration(days: 365 * 3));
+
+    final picked = await showDialog<DateTime>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (ctx) => GlassmorphicDatePicker(
+        initialDate: line.date.isBefore(first)
+            ? first
+            : (line.date.isAfter(last) ? last : line.date),
+        firstDate: first,
+        lastDate: last,
+        isStartDate: true,
+      ),
+    );
+
+    if (picked != null && mounted) {
+      setState(() {
+        line.date = DateTime(picked.year, picked.month, picked.day);
+      });
+    }
+  }
+
+  Future<void> _editExtractLineAmountWon(int index) async {
+    final line = _lines[index];
+    final controller =
+        TextEditingController(text: line.amountWon.toString());
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2C2C2E),
+        title: const Text(
+          '금액 (원)',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Pretendard Variable',
+          ),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontFamily: 'Pretendard Variable',
+          ),
+          decoration: InputDecoration(
+            hintText: '정수만 입력 (원)',
+            hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
+            suffixText: '원',
+            suffixStyle: TextStyle(
+              color: Colors.white.withOpacity(0.6),
               fontFamily: 'Pretendard Variable',
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white.withOpacity(0.35)),
+            ),
+            focusedBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white70),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              '취소',
+              style: TextStyle(color: Colors.white.withOpacity(0.75)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              '확인',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    final raw = controller.text.trim();
+    _disposeEditControllerNextFrame(controller);
+    if (!mounted || ok != true) return;
+    final v = int.tryParse(raw);
+    if (v == null) return;
+    setState(() => line.amountWon = v.clamp(0, 999999999));
+  }
+
+  Future<void> _editExtractLineQty(int index) async {
+    final line = _lines[index];
+    final controller = TextEditingController(text: line.qty.toString());
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2C2C2E),
+        title: const Text(
+          '수량',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Pretendard Variable',
+          ),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontFamily: 'Pretendard Variable',
+          ),
+          decoration: InputDecoration(
+            hintText: '정수만 입력 (개)',
+            hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
+            suffixText: '개',
+            suffixStyle: TextStyle(
+              color: Colors.white.withOpacity(0.6),
+              fontFamily: 'Pretendard Variable',
+            ),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white.withOpacity(0.35)),
+            ),
+            focusedBorder: const UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white70),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              '취소',
+              style: TextStyle(color: Colors.white.withOpacity(0.75)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              '확인',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    final raw = controller.text.trim();
+    _disposeEditControllerNextFrame(controller);
+    if (!mounted || ok != true) return;
+    final v = int.tryParse(raw);
+    if (v == null || v < 1) return;
+    setState(() => line.qty = v.clamp(1, 99999));
+  }
+
+  Widget _buildEditableExtractPill({
+    required String text,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: FrostedPanel(
+            borderRadius: BorderRadius.circular(14),
+            backgroundOpacity: 0.06,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Center(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Pretendard Variable',
+                ),
+              ),
             ),
           ),
         ),
@@ -2946,7 +3485,7 @@ class _AiReceiptRecognitionFlowDialogState
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w900,
                         fontFamily: 'Pretendard Variable',
                       ),
                     ),
@@ -2966,7 +3505,7 @@ class _AiReceiptRecognitionFlowDialogState
                 ),
               ),
               IconButton(
-                onPressed: () => Navigator.of(context).pop(),
+                onPressed: _closeReceiptFlowDialog,
                 icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.9)),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
@@ -3001,13 +3540,25 @@ class _AiReceiptRecognitionFlowDialogState
                   Expanded(
                     child: Row(
                       children: [
-                        _buildExtractPill(line.name),
+                        _buildEditableExtractPill(
+                          text: line.name,
+                          onTap: () => _editExtractLineName(index),
+                        ),
                         const SizedBox(width: 6),
-                        _buildExtractPill(line.date),
+                        _buildEditableExtractPill(
+                          text: _formatExtractReceiptDate(line.date),
+                          onTap: () => _editExtractLineDate(index),
+                        ),
                         const SizedBox(width: 6),
-                        _buildExtractPill(line.amount),
+                        _buildEditableExtractPill(
+                          text: '${line.amountWon}원',
+                          onTap: () => _editExtractLineAmountWon(index),
+                        ),
                         const SizedBox(width: 6),
-                        _buildExtractPill(line.qty),
+                        _buildEditableExtractPill(
+                          text: '${line.qty}개',
+                          onTap: () => _editExtractLineQty(index),
+                        ),
                       ],
                     ),
                   ),
@@ -3018,21 +3569,46 @@ class _AiReceiptRecognitionFlowDialogState
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
-          child: PrimaryButton(
-            label: '선택한 내용 등록하기',
-            onPressed: () {
-              final messenger = ScaffoldMessenger.maybeOf(context);
-              final n = _lines.where((e) => e.selected).length;
-              Navigator.of(context).pop();
-              messenger?.showSnackBar(
-                SnackBar(
-                  content: Text(
-                    n > 0 ? '$n건 등록 요청 (더미)' : '선택된 항목이 없습니다.',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PrimaryButton(
+                label: '선택한 내용 등록하기',
+                onPressed: () {
+                  final messenger = ScaffoldMessenger.maybeOf(context);
+                  final n = _lines.where((e) => e.selected).length;
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    Navigator.of(context, rootNavigator: true).maybePop();
+                    messenger?.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          n > 0 ? '$n건 등록 요청 (더미)' : '선택된 항목이 없습니다.',
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  });
+                },
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton(
+                  onPressed: _closeReceiptFlowDialog,
+                  child: Text(
+                    '영수증 분석 내용 취소',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.75),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Pretendard Variable',
+                    ),
                   ),
-                  behavior: SnackBarBehavior.floating,
                 ),
-              );
-            },
+              ),
+            ],
           ),
         ),
       ],
@@ -3040,383 +3616,3 @@ class _AiReceiptRecognitionFlowDialogState
   }
 }
 
-// Glassmorphic Date Picker (from chore_assignment_modal.dart)
-class _GlassmorphicDatePicker extends StatefulWidget {
-  final DateTime initialDate;
-  final DateTime firstDate;
-  final DateTime lastDate;
-  final bool isStartDate;
-
-  const _GlassmorphicDatePicker({
-    required this.initialDate,
-    required this.firstDate,
-    required this.lastDate,
-    required this.isStartDate,
-  });
-
-  @override
-  State<_GlassmorphicDatePicker> createState() => _GlassmorphicDatePickerState();
-}
-
-class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
-  late DateTime _selectedDate;
-  late DateTime _currentMonth;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedDate = widget.initialDate;
-    _currentMonth = DateTime(_selectedDate.year, _selectedDate.month);
-  }
-
-  void _previousMonth() {
-    final prevMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
-    final firstMonth = DateTime(widget.firstDate.year, widget.firstDate.month);
-    if (!prevMonth.isBefore(firstMonth)) {
-      setState(() {
-        _currentMonth = prevMonth;
-      });
-    }
-  }
-
-  void _nextMonth() {
-    final nextMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
-    final lastMonth = DateTime(widget.lastDate.year, widget.lastDate.month);
-    if (!nextMonth.isAfter(lastMonth)) {
-      setState(() {
-        _currentMonth = nextMonth;
-      });
-    }
-  }
-
-  bool _canGoPrevious() {
-    final prevMonth = DateTime(_currentMonth.year, _currentMonth.month - 1);
-    final firstMonth = DateTime(widget.firstDate.year, widget.firstDate.month);
-    return !prevMonth.isBefore(firstMonth);
-  }
-
-  bool _canGoNext() {
-    final nextMonth = DateTime(_currentMonth.year, _currentMonth.month + 1);
-    final lastMonth = DateTime(widget.lastDate.year, widget.lastDate.month);
-    return !nextMonth.isAfter(lastMonth);
-  }
-
-  bool _isDateSelectable(DateTime date) {
-    final dateOnly = DateTime(date.year, date.month, date.day);
-    final firstDateOnly = DateTime(widget.firstDate.year, widget.firstDate.month, widget.firstDate.day);
-    final lastDateOnly = DateTime(widget.lastDate.year, widget.lastDate.month, widget.lastDate.day);
-    return !dateOnly.isBefore(firstDateOnly) && !dateOnly.isAfter(lastDateOnly);
-  }
-
-  bool _isDateSelected(DateTime date) {
-    return date.year == _selectedDate.year &&
-        date.month == _selectedDate.month &&
-        date.day == _selectedDate.day;
-  }
-
-  void _selectDate(DateTime date) {
-    if (_isDateSelectable(date)) {
-      setState(() {
-        _selectedDate = DateTime(date.year, date.month, date.day);
-      });
-    }
-  }
-
-  String _getMonthYearText() {
-    final months = [
-      '1월', '2월', '3월', '4월', '5월', '6월',
-      '7월', '8월', '9월', '10월', '11월', '12월'
-    ];
-    return '${_currentMonth.year}년 ${months[_currentMonth.month - 1]}';
-  }
-
-  List<DateTime> _getDaysInMonth() {
-    final firstDay = DateTime(_currentMonth.year, _currentMonth.month, 1);
-    final lastDay = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
-    final firstWeekday = firstDay.weekday % 7; // 0 = 일요일, 6 = 토요일
-
-    final days = <DateTime>[];
-    
-    // 이전 달의 마지막 날들
-    for (int i = firstWeekday - 1; i >= 0; i--) {
-      days.add(firstDay.subtract(Duration(days: i + 1)));
-    }
-
-    // 현재 달의 날들
-    for (int i = 1; i <= lastDay.day; i++) {
-      days.add(DateTime(_currentMonth.year, _currentMonth.month, i));
-    }
-
-    // 다음 달의 첫 날들 (35개 셀을 채우기 위해 - 5주)
-    final remainingDays = 35 - days.length;
-    for (int i = 1; i <= remainingDays; i++) {
-      days.add(DateTime(_currentMonth.year, _currentMonth.month + 1, i));
-    }
-
-    return days;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final days = _getDaysInMonth();
-    final weekdays = ['일', '월', '화', '수', '목', '금', '토'];
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      alignment: Alignment.center,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: screenWidth - 32,
-          maxHeight: screenHeight * 0.45, // 공용 소비 물품 관리 컴포넌트와 동일한 높이
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white,
-                  width: 0.5,
-                ),
-                gradient: const RadialGradient(
-                  center: Alignment(-0.1212, -0.1178),
-                  radius: 1.7145,
-                  colors: [
-                    Color.fromRGBO(255, 255, 255, 0.10),
-                    Color.fromRGBO(255, 255, 255, 0.15),
-                  ],
-                  stops: [0.0, 1.0],
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(255, 255, 255, 0.25),
-                    offset: Offset(4, 4),
-                    blurRadius: 30,
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 헤더
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Opacity(
-                        opacity: _canGoPrevious() ? 1 : 0.3,
-                        child: GestureDetector(
-                          onTap: _canGoPrevious() ? _previousMonth : null,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.15),
-                                width: 0.5,
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.chevron_left,
-                              color: Colors.white.withOpacity(0.95),
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Text(
-                        _getMonthYearText(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 17, // 14 * 1.5 = 21
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Pretendard Variable',
-                        ),
-                      ),
-                      Opacity(
-                        opacity: _canGoNext() ? 1 : 0.3,
-                        child: GestureDetector(
-                          onTap: _canGoNext() ? _nextMonth : null,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.15),
-                                width: 0.5,
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.chevron_right,
-                              color: Colors.white.withOpacity(0.95),
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  // 요일 헤더
-                  Row(
-                    children: weekdays.map((day) {
-                      return Expanded(
-                        child: Center(
-                          child: Text(
-                            day,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              fontFamily: 'Pretendard Variable',
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 16),
-                  // 날짜 그리드 — Column(mainAxisSize: min) 안에서는 Expanded 사용 불가(무한 높이·sliver hasSize 충돌).
-                  // shrinkWrap GridView는 자체 높이를 계산하므로 Expanded 없이 둔다.
-                  GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 7,
-                        childAspectRatio: 1.2,
-                        mainAxisSpacing: 4,
-                        crossAxisSpacing: 4,
-                      ),
-                      itemCount: 35,
-                      itemBuilder: (context, index) {
-                        final date = days[index];
-                        final isCurrentMonth = date.month == _currentMonth.month;
-                        final isSelectable = _isDateSelectable(date);
-                        final isSelected = _isDateSelected(date);
-                        final isToday = date.year == DateTime.now().year &&
-                            date.month == DateTime.now().month &&
-                            date.day == DateTime.now().day;
-
-                        return GestureDetector(
-                          onTap: () => _selectDate(date),
-                          child: Container(
-                            margin: const EdgeInsets.all(2),
-                            child: isSelected
-                                ? Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(8),
-                                      color: Colors.white.withOpacity(0.15),
-                                      border: Border.all(
-                                        color: Colors.white.withOpacity(0.3),
-                                        width: 1,
-                                      ),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        '${date.day}',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                          fontFamily: 'Pretendard Variable',
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                : Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: isToday
-                                          ? Border.all(
-                                              color: Colors.white.withOpacity(0.3),
-                                              width: 1,
-                                            )
-                                          : null,
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        '${date.day}',
-                                        style: TextStyle(
-                                          color: isCurrentMonth && isSelectable
-                                              ? Colors.white
-                                              : Colors.white.withOpacity(0.4),
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w400,
-                                          fontFamily: 'Pretendard Variable',
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                          ),
-                        );
-                      },
-                    ),
-                  const SizedBox(height: 16),
-                  // 버튼
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.15),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: const Text(
-                            '취소',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w400,
-                              fontFamily: 'Pretendard Variable',
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).pop(_selectedDate),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            color: Colors.white.withOpacity(0.08),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: const Text(
-                            '확인',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              fontFamily: 'Pretendard Variable',
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

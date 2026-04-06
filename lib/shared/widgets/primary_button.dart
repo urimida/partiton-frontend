@@ -6,6 +6,7 @@ import 'package:partition_app/shared/widgets/frosted_panel.dart';
 class PrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback onPressed;
+  final bool enabled;
   final double width;
   final double height;
 
@@ -13,6 +14,7 @@ class PrimaryButton extends StatelessWidget {
     super.key,
     required this.label,
     required this.onPressed,
+    this.enabled = true,
     this.width = 360,
     this.height = 46,
   });
@@ -20,6 +22,7 @@ class PrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final BorderRadius pillRadius = BorderRadius.circular(height / 2);
+    final active = enabled;
 
     return SizedBox(
       width: width,
@@ -29,27 +32,33 @@ class PrimaryButton extends StatelessWidget {
         child: FrostedPanel(
           borderRadius: pillRadius,
           padding: EdgeInsets.zero,
-          backgroundOpacity: 0.08,
+          backgroundOpacity: active ? 0.08 : 0.04,
           showStroke: true,
+          borderColor: active
+              ? const Color.fromRGBO(255, 255, 255, 0.25)
+              : const Color.fromRGBO(160, 160, 170, 0.55),
           child: TextButton(
             style: TextButton.styleFrom(
               padding: EdgeInsets.zero,
               foregroundColor: Colors.white,
+              disabledForegroundColor: Colors.white.withOpacity(0.38),
               shape: RoundedRectangleBorder(borderRadius: pillRadius),
               backgroundColor: Colors.transparent,
             ),
-            onPressed: onPressed,
+            onPressed: active ? onPressed : null,
             child: Center(
               child: Text(
                 label,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: active
+                      ? Colors.white
+                      : Colors.white.withOpacity(0.42),
                   fontFamily: 'Pretendard Variable',
                   fontSize: 14,
                   fontWeight: FontWeight.w400,
                   fontStyle: FontStyle.normal,
-                  fontFeatures: [
+                  fontFeatures: const [
                     FontFeature.tabularFigures(),
                     FontFeature.liningFigures(),
                   ],

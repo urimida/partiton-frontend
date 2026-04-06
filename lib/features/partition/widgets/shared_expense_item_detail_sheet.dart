@@ -113,8 +113,9 @@ class _SharedExpenseItemDetailSheetState
                             widget.item.name,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              fontFamily: 'Pretendard Variable',
                               height: 1.25,
                             ),
                           ),

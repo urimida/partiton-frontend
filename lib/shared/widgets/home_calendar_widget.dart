@@ -937,8 +937,8 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
                     '일정 삭제',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
                       fontFamily: 'Pretendard Variable',
                     ),
                   ),
@@ -1080,8 +1080,8 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
                           '일정 수정',
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
                             fontFamily: 'Pretendard Variable',
                           ),
                         ),

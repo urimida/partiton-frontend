@@ -1,9 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:partition_app/features/partition/models/shared_expense_table_item.dart';
+import 'package:partition_app/features/partition/models/supply_category_model.dart';
 import 'package:partition_app/shared/widgets/glassmorphism_widget.dart';
 
-/// 공용 소비 내역 수동 추가·수정 (홈 집안일 자동 배정 모달과 동일 글래스 톤)
+/// 공용 소비·공과금 내역 관리 모달 (홈 집안일 자동 배정 모달과 동일 글래스 톤)
 class SharedExpenseManualModal extends StatefulWidget {
   final bool isUtility;
   final List<SharedExpenseTableItem> initialItems;
@@ -22,23 +23,8 @@ class SharedExpenseManualModal extends StatefulWidget {
 }
 
 class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
-  /// 물품: 대분류 → 소분류 옵션
-  static const Map<String, List<String>> _goodsCategoryMinors = {
-    '식품': [
-      '유제품',
-      '육류·계란',
-      '채소·과일',
-      '시리얼·간식',
-      '조미료·양념',
-      '냉동·즉석',
-      '음료',
-      '기타',
-    ],
-    '생활용품': ['세제', '화장지·물티슈', '청소용품', '욕실용품', '기타'],
-    '주방': ['조리도구', '용기·보관', '일회용품', '기타'],
-    '문구·가전': ['문구', '소형가전', '케이블·어댑터', '기타'],
-    '기타': ['일반'],
-  };
+  /// 물품: 앱 고정 트리 [kDefaultSupplyCategoryGroups]. 공과금: 사용 안 함.
+  List<SupplyCategoryGroup> _categories = const [];
 
   late List<SharedExpenseTableItem> _items;
   bool _isForm = false;
@@ -64,6 +50,29 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
     _dateCtrl = TextEditingController();
     _amountCtrl = TextEditingController();
     _qtyCtrl = TextEditingController();
+    if (!widget.isUtility) {
+      _categories = kDefaultSupplyCategoryGroups;
+    }
+  }
+
+  SupplyCategoryGroup? _groupForCategoryName(String? name) {
+    if (name == null || name.isEmpty) return null;
+    for (final c in _categories) {
+      if (c.categoryName == name) return c;
+    }
+    return null;
+  }
+
+  /// API 대분류 이름 목록. 수정 중인 행이 예전 데이터면 맨 앞에 임시로 포함
+  List<String> _majorNamesForPicker() {
+    final api = _categories.map((c) => c.categoryName).toList();
+    if (_isForm && _editIndex != null) {
+      final m = _items[_editIndex!].majorCategory?.trim();
+      if (m != null && m.isNotEmpty && !api.contains(m)) {
+        return [m, ...api];
+      }
+    }
+    return api;
   }
 
   @override
@@ -77,10 +86,20 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
   }
 
   List<String> _minorOptionsFor(String? major) {
-    if (major == null || !_goodsCategoryMinors.containsKey(major)) {
-      return const [];
+    if (major == null || major.isEmpty) return const [];
+    final g = _groupForCategoryName(major);
+    if (g != null) {
+      return g.subCategories.map((s) => s.subCategoryName).toList();
     }
-    return _goodsCategoryMinors[major]!;
+    if (_isForm && _editIndex != null) {
+      final e = _items[_editIndex!];
+      if (e.majorCategory == major &&
+          e.minorCategory != null &&
+          e.minorCategory!.trim().isNotEmpty) {
+        return [e.minorCategory!.trim()];
+      }
+    }
+    return const [];
   }
 
   void _onMajorChanged(String? value) {
@@ -224,12 +243,13 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
     Navigator.of(context).pop(true);
   }
 
+  /// 모달 제목 (18 / 블랙에 가까운 굵기로 통일)
   static const _titleStyle = TextStyle(
     color: Colors.white,
-    fontSize: 20,
-    fontWeight: FontWeight.w700,
+    fontSize: 18,
+    fontWeight: FontWeight.w900,
     fontFamily: 'Pretendard Variable',
-    height: 0.7,
+    height: 1.15,
   );
 
   static const _subtitleStyle = TextStyle(
@@ -240,17 +260,19 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
     height: 1.08,
   );
 
-  /// 텍스트 필드·드롭다운 행의 글래스 안쪽 여백
+  /// 텍스트 필드·카테고리 행 공통 — 카테고리만 넓던 것·텍스트만 낮던 것의 중간 높이로 통일
   static const EdgeInsets _kGlassFieldPadding =
-      EdgeInsets.symmetric(horizontal: 16, vertical: 8);
+      EdgeInsets.symmetric(horizontal: 16, vertical: 6);
 
-  /// 내역 목록에서 항목 이름(제목) — 기본 13의 약 1.2배 + 볼드
+  static const double _kFormFieldInnerHeight = 38.0;
+
+  /// 내역 목록 항목 제목 — 모달 제목(18)보다 작게 두어 위계 유지
   static const TextStyle _listItemTitleStyle = TextStyle(
     color: Colors.white,
-    fontSize: 16,
-    fontWeight: FontWeight.w800,
+    fontSize: 14,
+    fontWeight: FontWeight.w700,
     fontFamily: 'Pretendard Variable',
-    height: 1.2,
+    height: 1.1,
   );
 
   static ButtonStyle _listOutlineButtonStyle({required Color foreground}) {
@@ -265,15 +287,18 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
   }
 
   InputDecoration _fieldDecoration(String hint) {
+    // 고정 높이(_kFormFieldInnerHeight) 안에서 한 줄 입력이 세로 가운데 오도록 대칭 패딩
+    final vPad = ((_kFormFieldInnerHeight - 13 * 1.35) / 2).clamp(8.0, 14.0);
     return InputDecoration(
       hintText: hint,
       hintStyle: TextStyle(
         color: Colors.white.withOpacity(0.45),
         fontSize: 13,
         fontFamily: 'Pretendard Variable',
+        height: 1.35,
       ),
       isDense: true,
-      contentPadding: EdgeInsets.zero,
+      contentPadding: EdgeInsets.symmetric(vertical: vPad),
       border: InputBorder.none,
     );
   }
@@ -319,7 +344,7 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
                 ],
                 stops: [0.0, 1.0],
               ),
-              padding: const EdgeInsets.fromLTRB(20, 26, 20, 22),
+              padding: const EdgeInsets.fromLTRB(20, 34, 20, 30),
               child: _isForm ? _buildForm() : _buildList(),
             ),
           ),
@@ -333,15 +358,15 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          widget.isUtility ? '공과금 내역 추가·수정' : '공용 소비 내역 추가·수정',
+          widget.isUtility ? '공과금 내역 관리' : '공용 소비 내역 관리',
           textAlign: TextAlign.center,
           style: _titleStyle,
         ),
         const SizedBox(height: 8),
         Text(
           widget.isUtility
-              ? '항목을 직접 입력해 표에 반영할 수 있어요'
-              : 'AI 영수증 없이 물품 내역을 직접 추가·수정해요',
+              ? '항목을 직접 입력·수정·삭제하며 공과금 내역을 관리해요'
+              : 'AI 영수증 없이 물품 내역을\n직접 입력·수정·삭제하며 관리해요',
           textAlign: TextAlign.center,
           style: _subtitleStyle,
         ),
@@ -350,7 +375,7 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
           child: _items.isEmpty
               ? Center(
                   child: Text(
-                    '등록된 내역이 없어요.\n아래에서 추가해 보세요.',
+                    '등록된 내역이 없어요.\n아래에서 내역을 추가해 관리해 보세요.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.55),
@@ -361,88 +386,76 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
               : ListView.separated(
                   physics: const BouncingScrollPhysics(),
                   itemCount: _items.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, __) => Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    color: Colors.white.withOpacity(0.38),
+                  ),
                   itemBuilder: (context, i) {
                     final e = _items[i];
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 10),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                                color: Colors.white.withOpacity(0.45),
-                                width: 0.5),
-                            gradient: const RadialGradient(
-                              center: Alignment(-0.1212, -0.1178),
-                              radius: 1.7145,
-                              colors: [
-                                Color.fromRGBO(255, 255, 255, 0.12),
-                                Color.fromRGBO(255, 255, 255, 0.22),
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  e.displayLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: _listItemTitleStyle,
+                                ),
+                                const SizedBox(height: 1),
+                                Text(
+                                  '${e.date} · ${e.amount}'
+                                  '${e.quantity != null && e.quantity!.isNotEmpty ? ' · ${e.quantity}' : ''}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.75),
+                                    fontSize: 11,
+                                    height: 1.2,
+                                    fontFamily: 'Pretendard Variable',
+                                  ),
+                                ),
                               ],
-                              stops: [0.0, 1.0],
                             ),
                           ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      e.displayLabel,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: _listItemTitleStyle,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${e.date} · ${e.amount}'
-                                      '${e.quantity != null && e.quantity!.isNotEmpty ? ' · ${e.quantity}' : ''}',
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: Colors.white.withOpacity(0.75),
-                                        fontSize: 11,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                          OutlinedButton(
+                            onPressed: () => _openEditForm(i),
+                            style: _listOutlineButtonStyle(
+                              foreground: Colors.white,
+                            ),
+                            child: const Text(
+                              '수정',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
                               ),
-                              OutlinedButton(
-                                onPressed: () => _openEditForm(i),
-                                style: _listOutlineButtonStyle(
-                                  foreground: Colors.white,
-                                ),
-                                child: const Text(
-                                  '수정',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              OutlinedButton(
-                                onPressed: () => _deleteAt(i),
-                                style: _listOutlineButtonStyle(
-                                  foreground: Colors.red.shade200,
-                                ),
-                                child: Text(
-                                  '삭제',
-                                  style: TextStyle(
-                                    color: Colors.red.shade200,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 6),
+                          OutlinedButton(
+                            onPressed: () => _deleteAt(i),
+                            style: _listOutlineButtonStyle(
+                              foreground: Colors.white,
+                            ),
+                            child: const Text(
+                              '삭제',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -455,7 +468,7 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
         ),
         const SizedBox(height: 10),
         _glassPillButton(
-          label: '표에 반영하기',
+          label: '저장',
           onTap: _applyAndClose,
         ),
       ],
@@ -468,14 +481,16 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          _editIndex == null ? '공용소비내역 추가' : '내역 수정',
+          _editIndex == null
+              ? (widget.isUtility ? '공과금 내역 추가' : '공용 소비 내역 추가')
+              : '내역 수정',
           textAlign: TextAlign.center,
           maxLines: 2,
-          style: _titleStyle.copyWith(height: 1.15, fontSize: 18),
+          style: _titleStyle.copyWith(height: 1.15),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         Text(
-          '입력 후 저장하면 목록에 반영돼요',
+          '저장하면 목록에 반영되어 함께 관리돼요',
           textAlign: TextAlign.center,
           style: _subtitleStyle,
         ),
@@ -485,10 +500,11 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
             physics: const BouncingScrollPhysics(),
             children: [
                 if (widget.isUtility) ...[
-                  _glassField(
+                  _glassFormField(
                     child: TextField(
                       controller: _nameCtrl,
                       style: _inputStyle,
+                      textAlignVertical: TextAlignVertical.center,
                       decoration:
                           _fieldDecoration('항목명 (예: 수도세)'),
                     ),
@@ -500,11 +516,13 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
                     value: _selectedMajor,
                     enabled: true,
                     onTap: () async {
-                      final picked = await _showCategoryPickerSheet(
-                        title: '대분류',
-                        options: _goodsCategoryMinors.keys.toList(),
-                        current: _selectedMajor,
-                      );
+                      final opts = _majorNamesForPicker();
+                      if (opts.isEmpty) return;
+                        final picked = await _showGlassCategoryPickerModal(
+                          title: '대분류',
+                          options: opts,
+                          current: _selectedMajor,
+                        );
                       if (picked != null && mounted) _onMajorChanged(picked);
                     },
                   ),
@@ -517,47 +535,52 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
                     onTap: () async {
                       final opts = _minorOptionsFor(_selectedMajor);
                       if (opts.isEmpty) return;
-                      final picked = await _showCategoryPickerSheet(
-                        title: '소분류',
-                        options: opts,
-                        current: _selectedMinor,
-                      );
+                        final picked = await _showGlassCategoryPickerModal(
+                          title: '소분류',
+                          options: opts,
+                          current: _selectedMinor,
+                        );
                       if (picked != null && mounted) {
                         setState(() => _selectedMinor = picked);
                       }
                     },
                   ),
                   const SizedBox(height: 10),
-                  _glassField(
+                  _glassFormField(
                     child: TextField(
                       controller: _detailCtrl,
                       style: _inputStyle,
-                      decoration: _fieldDecoration('내용 (예: 콘프라이트 500g)'),
+                      textAlignVertical: TextAlignVertical.center,
+                      decoration:
+                          _fieldDecoration('제목 (예: 콘프라이트 500g)'),
                     ),
                   ),
                   const SizedBox(height: 10),
                 ],
-                _glassField(
+                _glassFormField(
                   child: TextField(
                     controller: _dateCtrl,
                     style: _inputStyle,
+                    textAlignVertical: TextAlignVertical.center,
                     decoration: _fieldDecoration('날짜 (예: 25.05.04. 또는 3일 뒤)'),
                   ),
                 ),
                 const SizedBox(height: 10),
-                _glassField(
+                _glassFormField(
                   child: TextField(
                     controller: _amountCtrl,
                     style: _inputStyle,
+                    textAlignVertical: TextAlignVertical.center,
                     keyboardType: TextInputType.text,
                     decoration: _fieldDecoration('금액 (예: 5,980원)'),
                   ),
                 ),
                 const SizedBox(height: 10),
-                _glassField(
+                _glassFormField(
                   child: TextField(
                     controller: _qtyCtrl,
                     style: _inputStyle,
+                    textAlignVertical: TextAlignVertical.center,
                     decoration: _fieldDecoration(
                         '$qtyLabel (선택, 예: 3개 또는 후불)'),
                   ),
@@ -571,123 +594,149 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
     );
   }
 
-  /// 드롭다운 대신 바텀시트로 선택 — 글래스 Clip·dense 조합으로 글자 잘림·겹침 방지
-  Future<String?> _showCategoryPickerSheet({
+  /// 대분류·소분류 탭 시 중앙 글래스모피즘 모달
+  Future<String?> _showGlassCategoryPickerModal({
     required String title,
     required List<String> options,
     String? current,
   }) async {
     if (options.isEmpty) return null;
-    final h = MediaQuery.sizeOf(context).height * 0.42;
-    return showModalBottomSheet<String>(
+    final mq = MediaQuery.of(context);
+    final dialogW = (mq.size.width - 48).clamp(280.0, 360.0);
+    final dialogH = (mq.size.height * 0.58).clamp(320.0, 520.0);
+
+    return showDialog<String>(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.52),
       builder: (ctx) {
-        // width·height 둘 다 있어야 Glassmorphism이 StackFit.expand로 자식에 유한 제약 전달
-        final sheetW = MediaQuery.sizeOf(ctx).width - 24;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(255, 255, 255, 0.2),
-                    offset: Offset(0, 8),
-                    blurRadius: 24,
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                width: dialogW,
+                height: dialogH,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.55),
+                    width: 0.5,
                   ),
-                ],
-              ),
-              child: GlassmorphismWidget(
-                width: sheetW,
-                height: h,
-                borderRadius: BorderRadius.circular(20),
-                backgroundOpacity: 0.12,
-                borderColor: Colors.white.withOpacity(0.45),
-                strokeGradient: const RadialGradient(
-                  center: Alignment(-0.1212, -0.1178),
-                  radius: 1.7145,
-                  colors: [
-                    Color.fromRGBO(255, 255, 255, 0.10),
-                    Color.fromRGBO(255, 255, 255, 0.15),
-                  ],
-                  stops: [0.0, 1.0],
-                ),
-                padding: EdgeInsets.zero,
-                child: Material(
-                  color: Colors.transparent,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 14, 6, 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700,
-                                  fontFamily: 'Pretendard Variable',
-                                  height: 1.25,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(ctx),
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1, thickness: 1, color: Colors.white24),
-                      Expanded(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          itemCount: options.length,
-                          separatorBuilder: (_, __) => const Divider(
-                            height: 1,
-                            thickness: 0.5,
-                            color: Colors.white12,
-                          ),
-                          itemBuilder: (c, i) {
-                            final o = options[i];
-                            final sel = o == current;
-                            return ListTile(
-                              title: Text(
-                                o,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight:
-                                      sel ? FontWeight.w700 : FontWeight.w500,
-                                  fontFamily: 'Pretendard Variable',
-                                  fontSize: 15,
-                                  height: 1.35,
-                                ),
-                              ),
-                              trailing: sel
-                                  ? const Icon(
-                                      Icons.check_rounded,
-                                      color: Colors.white70,
-                                      size: 22,
-                                    )
-                                  : null,
-                              onTap: () => Navigator.pop(ctx, o),
-                            );
-                          },
-                        ),
-                      ),
+                  gradient: const RadialGradient(
+                    center: Alignment(-0.1212, -0.1178),
+                    radius: 1.7145,
+                    colors: [
+                      Color.fromRGBO(255, 255, 255, 0.10),
+                      Color.fromRGBO(255, 255, 255, 0.16),
                     ],
+                    stops: [0.0, 1.0],
                   ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color.fromRGBO(255, 255, 255, 0.2),
+                      offset: Offset(4, 4),
+                      blurRadius: 24,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 4, 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                fontFamily: 'Pretendard Variable',
+                                height: 1.2,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: Colors.white70,
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 40,
+                              minHeight: 40,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      color: Colors.white.withOpacity(0.22),
+                    ),
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: options.length,
+                        separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          color: Colors.white.withOpacity(0.08),
+                        ),
+                        itemBuilder: (c, i) {
+                          final o = options[i];
+                          final sel = o == current;
+                          return Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => Navigator.pop(ctx, o),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        o,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: sel
+                                              ? FontWeight.w700
+                                              : FontWeight.w500,
+                                          fontFamily: 'Pretendard Variable',
+                                          fontSize: 15,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ),
+                                    if (sel)
+                                      const Icon(
+                                        Icons.check_rounded,
+                                        color: Colors.white70,
+                                        size: 22,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -703,14 +752,14 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
     required bool enabled,
     required VoidCallback onTap,
   }) {
-    return _glassField(
+    return _glassFormField(
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: enabled ? onTap : null,
           borderRadius: BorderRadius.circular(18),
-          child: SizedBox(
-            height: 40,
+          child: Align(
+            alignment: Alignment.centerLeft,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -767,6 +816,16 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
       ),
       padding: _kGlassFieldPadding,
       child: child,
+    );
+  }
+
+  /// 폼 입력·카테고리 선택 줄 — 동일 내부 높이로 시각적 통일
+  Widget _glassFormField({required Widget child}) {
+    return _glassField(
+      child: SizedBox(
+        height: _kFormFieldInnerHeight,
+        child: child,
+      ),
     );
   }
 

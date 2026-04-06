@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:partition_app/features/partition/models/shared_expense_table_item.dart';
 
 /// 공과금 추가하기 — 항목 다중 선택 + 매월 납부일 선택 후 표에 반영
@@ -31,19 +32,36 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
   final Set<String> _selected = {};
   int _paymentDay = 1;
   final TextEditingController _otherCtrl = TextEditingController();
+  final TextEditingController _amountCtrl = TextEditingController();
+  final TextEditingController _remarkCtrl = TextEditingController();
 
   @override
   void dispose() {
     _otherCtrl.dispose();
+    _amountCtrl.dispose();
+    _remarkCtrl.dispose();
     super.dispose();
   }
 
+  /// 표 금액 열과 동일하게 천 단위 콤마 + 원
+  static String _formatWonForTable(int won) {
+    final n = won < 0 ? 0 : won;
+    final s = n.toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    return '${buf.toString()}원';
+  }
+
+  /// AI 영수증 모달 제목과 동일 (18 / w800)
   static const _titleStyle = TextStyle(
     color: Colors.white,
-    fontSize: 20,
-    fontWeight: FontWeight.w700,
+    fontSize: 18,
+    fontWeight: FontWeight.w900,
     fontFamily: 'Pretendard Variable',
-    height: 0.7,
+    height: 1.15,
   );
 
   void _toggleCategory(String label) {
@@ -79,6 +97,31 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
       }
     }
 
+    final amountDigits =
+        _amountCtrl.text.replaceAll(RegExp(r'[^0-9]'), '').trim();
+    if (amountDigits.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('금액을 정수로 입력해 주세요.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    final amountInt = int.tryParse(amountDigits);
+    if (amountInt == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('금액을 올바른 숫자로 입력해 주세요.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+    final amountStr = _formatWonForTable(amountInt);
+    final remarkTrim = _remarkCtrl.text.trim();
+    final remarkForTable = remarkTrim.isEmpty ? '—' : remarkTrim;
+
     final added = <SharedExpenseTableItem>[];
     final skipped = <String>[];
 
@@ -93,8 +136,8 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
         SharedExpenseTableItem(
           name: name,
           date: '매월 $_paymentDay일',
-          amount: '-',
-          quantity: '납부',
+          amount: amountStr,
+          quantity: remarkForTable,
         ),
       );
     }
@@ -135,7 +178,7 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
     final screenW = MediaQuery.sizeOf(context).width;
     final screenH = MediaQuery.sizeOf(context).height;
     final dialogW = (screenW - 40).clamp(300.0, 350.0);
-    final maxDialogH = (screenH * 0.52).clamp(300.0, 460.0);
+    final maxDialogH = (screenH * 0.62).clamp(320.0, 520.0);
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
@@ -172,7 +215,7 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -182,7 +225,7 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
                         textAlign: TextAlign.center,
                         style: _titleStyle,
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 12),
                       Expanded(
                         child: SingleChildScrollView(
                           physics: const BouncingScrollPhysics(),
@@ -241,7 +284,7 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
                                   ),
                                 ),
                               ],
-                              const SizedBox(height: 18),
+                              const SizedBox(height: 14),
                               Text(
                                 '매달 납부일',
                                 textAlign: TextAlign.center,
@@ -252,7 +295,7 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
                                   fontFamily: 'Pretendard Variable',
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 6),
                               Center(
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
@@ -292,11 +335,119 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
                                   ),
                                 ),
                               ),
+                              const SizedBox(height: 14),
+                              Text(
+                                '금액',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.85),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: 'Pretendard Variable',
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: BackdropFilter(
+                                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.45),
+                                      ),
+                                      color: Colors.white.withOpacity(0.08),
+                                    ),
+                                    child: TextField(
+                                      controller: _amountCtrl,
+                                      keyboardType: TextInputType.number,
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.digitsOnly,
+                                      ],
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontFamily: 'Pretendard Variable',
+                                      ),
+                                      decoration: InputDecoration(
+                                        hintText: '정수만 입력 (원)',
+                                        hintStyle: TextStyle(
+                                          color: Colors.white.withOpacity(0.45),
+                                          fontSize: 13,
+                                        ),
+                                        suffixText: '원',
+                                        suffixStyle: TextStyle(
+                                          color: Colors.white.withOpacity(0.55),
+                                          fontSize: 13,
+                                          fontFamily: 'Pretendard Variable',
+                                        ),
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              Text(
+                                '비고',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.85),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: 'Pretendard Variable',
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: BackdropFilter(
+                                  filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.45),
+                                      ),
+                                      color: Colors.white.withOpacity(0.08),
+                                    ),
+                                    child: TextField(
+                                      controller: _remarkCtrl,
+                                      maxLines: 2,
+                                      minLines: 1,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontFamily: 'Pretendard Variable',
+                                      ),
+                                      decoration: InputDecoration(
+                                        hintText: '예: 자동이체, 고정, 후불',
+                                        hintStyle: TextStyle(
+                                          color: Colors.white.withOpacity(0.45),
+                                          fontSize: 13,
+                                        ),
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ],
                           ),
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
                       SizedBox(
                         height: 46,
                         child: GestureDetector(

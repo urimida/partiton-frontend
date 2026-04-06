@@ -28,7 +28,9 @@ class AppConfig {
   static const String choresAutoAssignEndpoint = '/chores/auto-assign';
   /// 집안일 완료 여부 수정 (일간 캘린더의 chore id)
   static const String choreDetailEndpoint = '/chores/{choreId}';
-  
+  /// 공동 구매(공용 소비) 물품 카테고리 — household 생성 시 시드된 대·소분류
+  static const String suppliesCategoriesEndpoint = '/supplies/categories';
+
   // 로컬 저장소 키
   static const String tokenKey = 'auth_token';
   static const String refreshTokenKey = 'refresh_token';
