@@ -1,8 +1,12 @@
+import 'dart:async';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:kakao_flutter_sdk_common/kakao_flutter_sdk_common.dart';
 import 'package:partition_app/core/config/app_config.dart';
+import 'package:partition_app/core/push/fcm_registration_service.dart';
 import 'package:partition_app/core/router/app_router.dart';
 import 'package:partition_app/core/theme/app_theme.dart';
 import 'package:partition_app/core/providers/app_providers.dart';
@@ -10,16 +14,18 @@ import 'package:partition_app/core/storage/storage_service.dart';
 import 'package:partition_app/debug/debug_home_screen.dart';
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
-import 'package:partition_app/features/auth/models/user_model.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  await FcmRegistrationService.initializePlugin();
+
   // 카카오 SDK 초기화
   KakaoSdk.init(
     nativeAppKey: '0638124027aec1134312be64899dcde2',
   );
-  
+
   runApp(const PartitionApp());
 }
 
@@ -88,6 +94,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         final targetRoute = await _getTargetRoute();
         if (mounted) {
           Navigator.of(context).pushReplacementNamed(targetRoute);
+          unawaited(FcmRegistrationService.registerIfLoggedIn());
         }
       } else {
         if (mounted) {
@@ -101,16 +108,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Future<String> _getTargetRoute() async {
     final authService = AuthService();
     
-    // 서버에서 사용자 정보 조회 시도 (실패해도 계속 진행)
-    UserModel? userInfo;
-    try {
-      userInfo = await authService.getUserInfo();
-    } catch (e) {
-      // 서버 에러 발생해도 무시하고 로컬 스토리지로 fallback
-      debugPrint('사용자 정보 조회 실패 (로컬 스토리지 사용): $e');
-    }
-    
-    // 1. 닉네임 확인 (서버 정보 우선, 없으면 로컬 스토리지 확인)
+    // 로컬 토큰·저장소 기반 세션 사용자 (GET /users/me 미사용)
+    final userInfo = await authService.getUserInfo();
+
+    // 1. 닉네임 확인 (세션 모델·로컬 스토리지)
     String? userName = userInfo?.name;
     if (userName == null || userName.isEmpty) {
       userName = await StorageService.getUserName();
@@ -118,7 +119,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
         return AppRouter.onboardingSurvey; // 닉네임 입력 화면
       }
     } else {
-      // 서버에서 가져온 이름을 로컬 스토리지에 저장
       await StorageService.setUserName(userName);
     }
 

@@ -11,6 +11,7 @@ import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/core/storage/storage_service.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
+import 'package:partition_app/shared/utils/partition_dummy_data_policy.dart';
 
 const _kChoreTaskNames = ['설거지', '빨래', '청소', '분리수거'];
 const _kOtherMemberNames = ['홍길동', '김민수', '이영희', '박서준'];
@@ -55,11 +56,16 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
   /// 월간 더미 집안일(음수 id) 로컬 완료 — 서버와 별개
   final Map<int, bool> _previewChoreCompleted = {};
 
-  /// 월간 점 표시용. 4월은 API/캐시와 무관하게 미리보기 더미를 항상 합침(표시 연도·날짜 키 일치, 캐시 조기 return에도 적용).
+  /// null: 아직 `didChangeDependencies` 전. true: 디버그·미로그인일 때만 4월 미리보기 더미 합침.
+  bool? _partitionDummyActive;
+
+  /// 월간 점 표시용. 4월 미리보기 더미는 디버그·미로그인일 때만 합침.
   Map<String, List<_CalendarEvent>> get _events {
     final base = _cachedEvents ?? {};
     Map<String, List<_CalendarEvent>> combined;
-    if (_currentMonth.month == 4) {
+    final injectAprilPreview =
+        _partitionDummyActive == true && _currentMonth.month == 4;
+    if (injectAprilPreview) {
       combined = Map<String, List<_CalendarEvent>>.from(base);
       combined.addAll(_buildAprilPreviewEvents(_currentMonth.year));
     } else {
@@ -426,7 +432,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
           });
         }
       } else {
-        // 실패 시 빈 배열을 넣지 않음 — dailyItems가 null로 남아 월간(더미)으로 폴백
+        // 실패 시 빈 배열을 넣지 않음 — 디버그·미로그인일 때만 월간 합성으로 폴백
         if (mounted) {
           setState(() {
             _cachedDailyEvents ??= {};
@@ -755,17 +761,12 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       return localUserName;
     }
     
-    // 3. 서버에서 사용자 정보 조회 시도 (로컬에 없을 때만)
-    try {
-      final authService = AuthService();
-      final userInfo = await authService.getUserInfo();
-      if (userInfo?.name != null && userInfo!.name!.isNotEmpty) {
-        // 서버에서 가져온 이름을 로컬에도 저장
-        await StorageService.setUserName(userInfo.name!);
-        return userInfo.name;
-      }
-    } catch (e) {
-      // 서버 에러는 무시하고 null 반환
+    // 3. 세션 사용자(로컬만, GET /users/me 미사용)
+    final authService = AuthService();
+    final userInfo = await authService.getUserInfo();
+    if (userInfo?.name != null && userInfo!.name!.isNotEmpty) {
+      await StorageService.setUserName(userInfo.name!);
+      return userInfo.name;
     }
     
     return null;
@@ -776,18 +777,48 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     final dateKey = _dateKey(date);
     final dailyItems = _getDailyEvents(dateKey);
     final monthlyFallback = _events[dateKey] ?? [];
+    final allowSyntheticFallback = _partitionDummyActive == true;
 
-    // 일간 실패 시 dailyItems == null → 월간(더미) 사용
-    // 일간이 빈 배열인데 월간에만 일정이 있으면(타임아웃 후 등) 월간으로 표시
     final List<_CalendarEvent> events;
-    if (dailyItems == null) {
-      events = monthlyFallback;
-    } else if (dailyItems.isEmpty && monthlyFallback.isNotEmpty) {
-      events = monthlyFallback;
+    if (allowSyntheticFallback) {
+      // 디버그·미로그인: 일간 없을 때 월간 건수 기반 합성 일정으로 폴백
+      if (dailyItems == null) {
+        events = monthlyFallback;
+      } else if (dailyItems.isEmpty && monthlyFallback.isNotEmpty) {
+        events = monthlyFallback;
+      } else {
+        events = _convertDailyItemsToEvents(dailyItems);
+      }
     } else {
+      // 로그인(또는 릴리스): 일간 API 결과만 표시 — 합성 일정과 섞지 않음
+      if (dailyItems == null) {
+        if (_isLoadingDaily) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                '일정을 불러오는 중…',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          );
+        }
+        return const Center(
+          child: Text(
+            '이 날의 일정을 불러오지 못했어요.',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+            ),
+          ),
+        );
+      }
       events = _convertDailyItemsToEvents(dailyItems);
     }
-    
+
     if (events.isEmpty) {
       return const Center(
         child: Text(
@@ -799,7 +830,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
         ),
       );
     }
-    
+
     return ListView(
       shrinkWrap: false,
       padding: const EdgeInsets.only(top: 0),
@@ -1428,6 +1459,24 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
         setState(() => _meNameForChores = me);
       }
       _loadCalendarData(_currentMonth.year, _currentMonth.month);
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final useDummy = usePartitionDummyData(
+      Provider.of<AuthProvider>(context).isAuthenticated,
+    );
+    if (_partitionDummyActive == useDummy) return;
+    _partitionDummyActive = useDummy;
+    if (!useDummy) {
+      _previewChoreCompleted.clear();
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {});
+      _loadCalendarData(_currentMonth.year, _currentMonth.month, forceRefresh: true);
     });
   }
 

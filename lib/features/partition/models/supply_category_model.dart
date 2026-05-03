@@ -45,131 +45,146 @@ class SupplySubCategoryItem {
   }
 }
 
-/// 앱 고정 공용 소비 분류 (백엔드 미사용). 수동 추가 모달 대·소분류 선택에 사용합니다.
+/// GET /api/supplies/categories 실패 시 폴백. enum·한글명은 서버 household 시드와 동일하게 유지.
 const List<SupplyCategoryGroup> kDefaultSupplyCategoryGroups = [
   SupplyCategoryGroup(
     category: 'KITCHEN',
     categoryName: '주방용품',
     subCategories: [
-      SupplySubCategoryItem(subCategory: 'kitchen_scissors', subCategoryName: '가위'),
-      SupplySubCategoryItem(subCategory: 'kitchen_knife', subCategoryName: '칼'),
-      SupplySubCategoryItem(subCategory: 'kitchen_board', subCategoryName: '도마'),
-      SupplySubCategoryItem(subCategory: 'kitchen_sponge', subCategoryName: '수세미'),
+      SupplySubCategoryItem(subCategory: 'SCISSORS', subCategoryName: '주방가위'),
+      SupplySubCategoryItem(subCategory: 'KNIFE', subCategoryName: '주방칼'),
+      SupplySubCategoryItem(subCategory: 'SCRUBBER', subCategoryName: '수세미'),
+      SupplySubCategoryItem(subCategory: 'DISH_SOAP', subCategoryName: '주방세제'),
       SupplySubCategoryItem(
-        subCategory: 'kitchen_detergent',
-        subCategoryName: '주방세제',
-      ),
-      SupplySubCategoryItem(
-        subCategory: 'kitchen_towel',
+        subCategory: 'KITCHEN_TOWEL',
         subCategoryName: '키친타올',
       ),
+      SupplySubCategoryItem(subCategory: 'GARBAGE_BAG', subCategoryName: '비닐봉투'),
       SupplySubCategoryItem(
-        subCategory: 'kitchen_trash_bag',
-        subCategoryName: '쓰레기봉투',
-      ),
-      SupplySubCategoryItem(
-        subCategory: 'kitchen_gloves',
+        subCategory: 'RUBBER_GLOVES',
         subCategoryName: '고무장갑',
       ),
+      SupplySubCategoryItem(subCategory: 'KITCHEN_ETC', subCategoryName: '기타'),
     ],
   ),
   SupplyCategoryGroup(
-    category: 'BATH',
+    category: 'BATHROOM',
     categoryName: '욕실용품',
     subCategories: [
-      SupplySubCategoryItem(subCategory: 'bath_shampoo', subCategoryName: '샴푸'),
-      SupplySubCategoryItem(subCategory: 'bath_rinse', subCategoryName: '린스'),
-      SupplySubCategoryItem(subCategory: 'bath_body_wash', subCategoryName: '바디워시'),
-      SupplySubCategoryItem(subCategory: 'bath_toothpaste', subCategoryName: '치약'),
-      SupplySubCategoryItem(subCategory: 'bath_tissue', subCategoryName: '휴지'),
-      SupplySubCategoryItem(subCategory: 'bath_hand_wash', subCategoryName: '핸드워시'),
+      SupplySubCategoryItem(subCategory: 'SHAMPOO', subCategoryName: '샴푸'),
+      SupplySubCategoryItem(subCategory: 'CONDITIONER', subCategoryName: '린스'),
+      SupplySubCategoryItem(subCategory: 'BODY_WASH', subCategoryName: '바디워시'),
+      SupplySubCategoryItem(subCategory: 'TOOTHPASTE', subCategoryName: '치약'),
+      SupplySubCategoryItem(
+        subCategory: 'TOILET_PAPER_BATHROOM',
+        subCategoryName: '휴지',
+      ),
+      SupplySubCategoryItem(subCategory: 'HAND_WASH', subCategoryName: '핸드워시'),
+      SupplySubCategoryItem(subCategory: 'BATHROOM_ETC', subCategoryName: '기타'),
     ],
   ),
   SupplyCategoryGroup(
     category: 'CLEANING',
     categoryName: '청소용품',
     subCategories: [
-      SupplySubCategoryItem(subCategory: 'clean_wipe', subCategoryName: '청소포'),
-      SupplySubCategoryItem(subCategory: 'clean_brush', subCategoryName: '청소솔'),
       SupplySubCategoryItem(
-        subCategory: 'clean_laundry',
+        subCategory: 'CLEANING_SHEET',
+        subCategoryName: '청소포',
+      ),
+      SupplySubCategoryItem(
+        subCategory: 'CLEANING_BRUSH',
+        subCategoryName: '청소솔',
+      ),
+      SupplySubCategoryItem(
+        subCategory: 'LAUNDRY_DETERGENT',
         subCategoryName: '세탁세제',
       ),
       SupplySubCategoryItem(
-        subCategory: 'clean_softener',
+        subCategory: 'FABRIC_SOFTENER',
         subCategoryName: '섬유유연제',
       ),
       SupplySubCategoryItem(
-        subCategory: 'clean_glass',
+        subCategory: 'GLASS_CLEANER',
         subCategoryName: '유리세정제',
       ),
       SupplySubCategoryItem(
-        subCategory: 'clean_bathroom',
+        subCategory: 'BATHROOM_CLEANER',
         subCategoryName: '욕실 세제',
       ),
+      SupplySubCategoryItem(subCategory: 'CLEANING_ETC', subCategoryName: '기타'),
     ],
   ),
   SupplyCategoryGroup(
     category: 'HYGIENE',
     categoryName: '위생용품',
     subCategories: [
-      SupplySubCategoryItem(subCategory: 'hyg_tissue', subCategoryName: '휴지'),
-      SupplySubCategoryItem(subCategory: 'hyg_wet_wipe', subCategoryName: '물티슈'),
       SupplySubCategoryItem(
-        subCategory: 'hyg_air_freshener',
+        subCategory: 'TOILET_PAPER_HYGIENE',
+        subCategoryName: '휴지',
+      ),
+      SupplySubCategoryItem(subCategory: 'WET_WIPES', subCategoryName: '물티슈'),
+      SupplySubCategoryItem(
+        subCategory: 'AIR_FRESHENER_HYGIENE',
         subCategoryName: '방향제',
       ),
+      SupplySubCategoryItem(subCategory: 'HYGIENE_ETC', subCategoryName: '기타'),
     ],
   ),
   SupplyCategoryGroup(
     category: 'GROCERY',
     categoryName: '식료품',
     subCategories: [
-      SupplySubCategoryItem(subCategory: 'groc_rice', subCategoryName: '쌀'),
-      SupplySubCategoryItem(subCategory: 'groc_water', subCategoryName: '생수'),
-      SupplySubCategoryItem(subCategory: 'groc_oil', subCategoryName: '기름'),
+      SupplySubCategoryItem(subCategory: 'RICE', subCategoryName: '쌀'),
+      SupplySubCategoryItem(subCategory: 'WATER', subCategoryName: '생수'),
+      SupplySubCategoryItem(subCategory: 'OIL', subCategoryName: '식용유'),
       SupplySubCategoryItem(
-        subCategory: 'groc_basic_seasoning',
+        subCategory: 'BASIC_SEASONING',
         subCategoryName: '기본 조미료',
       ),
       SupplySubCategoryItem(
-        subCategory: 'groc_basic_sauce',
+        subCategory: 'BASIC_SAUCE',
         subCategoryName: '기본 양념',
       ),
-      SupplySubCategoryItem(subCategory: 'groc_eggs', subCategoryName: '계란'),
-      SupplySubCategoryItem(subCategory: 'groc_milk', subCategoryName: '우유'),
-      SupplySubCategoryItem(subCategory: 'groc_bread', subCategoryName: '식빵'),
-      SupplySubCategoryItem(subCategory: 'groc_kimchi', subCategoryName: '김치'),
-      SupplySubCategoryItem(subCategory: 'groc_ramen', subCategoryName: '라면'),
-      SupplySubCategoryItem(
-        subCategory: 'groc_vegetables',
-        subCategoryName: '야채',
-      ),
+      SupplySubCategoryItem(subCategory: 'EGGS', subCategoryName: '계란'),
+      SupplySubCategoryItem(subCategory: 'MILK', subCategoryName: '우유'),
+      SupplySubCategoryItem(subCategory: 'BREAD', subCategoryName: '식빵'),
+      SupplySubCategoryItem(subCategory: 'KIMCHI', subCategoryName: '김치'),
+      SupplySubCategoryItem(subCategory: 'RAMEN', subCategoryName: '라면'),
+      SupplySubCategoryItem(subCategory: 'VEGETABLES', subCategoryName: '야채'),
+      SupplySubCategoryItem(subCategory: 'GROCERY_ETC', subCategoryName: '기타'),
     ],
   ),
   SupplyCategoryGroup(
-    category: 'OTHER',
-    categoryName: '기타',
+    category: 'LIVING',
+    categoryName: '생활용품',
     subCategories: [
-      SupplySubCategoryItem(subCategory: 'oth_power_strip', subCategoryName: '멀티탭'),
-      SupplySubCategoryItem(subCategory: 'oth_tissue_box', subCategoryName: '각티슈'),
+      SupplySubCategoryItem(subCategory: 'POWER_STRIP', subCategoryName: '멀티탭'),
+      SupplySubCategoryItem(subCategory: 'TISSUE_BOX', subCategoryName: '각티슈'),
       SupplySubCategoryItem(
-        subCategory: 'oth_air_freshener',
+        subCategory: 'AIR_FRESHENER_ETC',
         subCategoryName: '방향제',
       ),
       SupplySubCategoryItem(
-        subCategory: 'oth_fluorescent',
+        subCategory: 'FLUORESCENT_LAMP',
         subCategoryName: '형광등',
       ),
-      SupplySubCategoryItem(subCategory: 'oth_battery', subCategoryName: '건전지'),
+      SupplySubCategoryItem(subCategory: 'BATTERY', subCategoryName: '건전지'),
       SupplySubCategoryItem(
-        subCategory: 'oth_mosquito',
+        subCategory: 'MOSQUITO_REPELLENT',
         subCategoryName: '모기약',
       ),
       SupplySubCategoryItem(
-        subCategory: 'oth_fly_swatter',
+        subCategory: 'ELECTRIC_FLY_SWATTER',
         subCategoryName: '전기파리채',
       ),
+      SupplySubCategoryItem(subCategory: 'LIVING_ETC', subCategoryName: '기타'),
+    ],
+  ),
+  SupplyCategoryGroup(
+    category: 'ETC',
+    categoryName: '기타',
+    subCategories: [
+      SupplySubCategoryItem(subCategory: 'ETC', subCategoryName: '기타'),
     ],
   ),
 ];

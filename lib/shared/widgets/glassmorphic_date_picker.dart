@@ -122,17 +122,22 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
   Widget build(BuildContext context) {
     final days = _getDaysInMonth();
     final weekdays = ['일', '월', '화', '수', '목', '금', '토'];
-    final screenHeight = MediaQuery.of(context).size.height;
-    final screenWidth = MediaQuery.of(context).size.width;
+    final mq = MediaQuery.of(context);
+    final screenHeight = mq.size.height;
+    final screenWidth = mq.size.width;
+    // 작은 디바이스(iPhone SE 등)에서 달 5주 그리드+버튼이 45% 제한에 걸려 오버플로우됨.
+    // 안전 영역 안에서 세로를 넉넉히 쓰고, 큰 글자/랜드스케이프는 스크롤로 대응.
+    final safeVertical = screenHeight - mq.padding.vertical;
+    final maxDialogHeight = safeVertical * 0.82;
 
     return Dialog(
       backgroundColor: Colors.transparent,
       alignment: Alignment.center,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxWidth: screenWidth - 32,
-          maxHeight: screenHeight * 0.45, // 공용 소비 물품 관리 컴포넌트와 동일한 높이
+          maxHeight: maxDialogHeight,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
@@ -163,9 +168,10 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                 ],
               ),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                   // 헤더
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -374,6 +380,7 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                     ],
                   ),
                 ],
+                ),
               ),
             ),
           ),

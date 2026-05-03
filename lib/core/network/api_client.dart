@@ -24,6 +24,10 @@ class ApiClient {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          // FormData는 boundary가 포함된 Content-Type이 필요 — 기본 application/json 제거
+          if (options.data is FormData) {
+            options.headers.remove(Headers.contentTypeHeader);
+          }
           // 인증이 필요 없는 엔드포인트 목록
           final publicEndpoints = [
             AppConfig.loginEndpoint,
@@ -107,6 +111,26 @@ class ApiClient {
       );
     } catch (e) {
       _logger.e('POST Error: $e');
+      rethrow;
+    }
+  }
+
+  /// multipart/form-data (이미지 등). [receiveTimeout]이 길면 CV 분석 대기에 사용.
+  Future<Response> postMultipart(
+    String path, {
+    required FormData data,
+    Duration? receiveTimeout,
+  }) async {
+    try {
+      return await _dio.post(
+        path,
+        data: data,
+        options: Options(
+          receiveTimeout: receiveTimeout ?? const Duration(minutes: 2),
+        ),
+      );
+    } catch (e) {
+      _logger.e('POST Multipart Error: $e');
       rethrow;
     }
   }

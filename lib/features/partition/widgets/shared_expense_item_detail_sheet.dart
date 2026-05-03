@@ -6,13 +6,20 @@ import 'package:partition_app/features/partition/models/shared_expense_table_ite
 class SharedExpenseItemDetailSheet extends StatefulWidget {
   final SharedExpenseTableItem item;
   final bool isUtility;
-  final ValueChanged<bool> onSettlementChanged;
+  /// API 정산 연동 시 예외로 실패를 알리고, switch는 이전 값으로 복구할 수 있게 [Future] 사용
+  final Future<void> Function(bool) onSettlementChanged;
+  /// 시트를 닫은 뒤 내역 수정 다이얼로그를 연다
+  final VoidCallback? onEditRequested;
+  /// 시트를 닫은 뒤 삭제 확인·처리
+  final Future<void> Function()? onDeleteRequested;
 
   const SharedExpenseItemDetailSheet({
     super.key,
     required this.item,
     required this.isUtility,
     required this.onSettlementChanged,
+    this.onEditRequested,
+    this.onDeleteRequested,
   });
 
   @override
@@ -28,6 +35,17 @@ class _SharedExpenseItemDetailSheetState
   void initState() {
     super.initState();
     _settled = widget.item.manuallySettled;
+  }
+
+  @override
+  void didUpdateWidget(SharedExpenseItemDetailSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.purchaseId != widget.item.purchaseId ||
+        oldWidget.item.billId != widget.item.billId ||
+        oldWidget.item.manuallySettled != widget.item.manuallySettled ||
+        oldWidget.item.name != widget.item.name) {
+      _settled = widget.item.manuallySettled;
+    }
   }
 
   /// 항상 `대분류 > 소분류` 형태 (없으면 `—` 자리 표시)
@@ -158,6 +176,75 @@ class _SharedExpenseItemDetailSheetState
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      const SizedBox(height: 16),
+                    ],
+                    if (widget.onEditRequested != null ||
+                        widget.onDeleteRequested != null) ...[
+                      Row(
+                        children: [
+                          if (widget.onEditRequested != null)
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                  widget.onEditRequested!();
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: BorderSide(
+                                    color: Colors.white.withOpacity(0.45),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: const Text(
+                                  '수정',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: 'Pretendard Variable',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (widget.onEditRequested != null &&
+                              widget.onDeleteRequested != null)
+                            const SizedBox(width: 10),
+                          if (widget.onDeleteRequested != null)
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () async {
+                                  final del = widget.onDeleteRequested!;
+                                  Navigator.of(context).pop();
+                                  await del();
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor:
+                                      const Color.fromRGBO(255, 180, 180, 1.0),
+                                  side: BorderSide(
+                                    color: Colors.redAccent.withOpacity(0.55),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ),
+                                child: const Text(
+                                  '삭제',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: 'Pretendard Variable',
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                       const SizedBox(height: 20),
                     ],
                     Text(
@@ -231,9 +318,16 @@ class _SharedExpenseItemDetailSheetState
                             activeTrackColor: Colors.white.withOpacity(0.45),
                             inactiveThumbColor: Colors.white54,
                             inactiveTrackColor: Colors.white.withOpacity(0.2),
-                            onChanged: (v) {
+                            onChanged: (v) async {
+                              final was = _settled;
                               setState(() => _settled = v);
-                              widget.onSettlementChanged(v);
+                              try {
+                                await widget.onSettlementChanged(v);
+                              } catch (_) {
+                                if (mounted) {
+                                  setState(() => _settled = was);
+                                }
+                              }
                             },
                           ),
                         ],

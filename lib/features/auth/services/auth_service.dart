@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:partition_app/core/config/app_config.dart';
 import 'package:partition_app/core/network/api_client.dart';
@@ -10,6 +11,34 @@ import 'package:partition_app/features/auth/models/kakao_auth_response_model.dar
 import 'package:partition_app/features/auth/models/update_name_response_model.dart';
 import 'package:partition_app/features/auth/models/household_response_model.dart';
 import 'package:partition_app/features/auth/models/preference_response_model.dart';
+
+/// 하우스 멤버 (`POST /supplies/settlement`의 `memberIds` 등)
+class HouseholdMemberBrief {
+  final int userId;
+  final String name;
+
+  const HouseholdMemberBrief({required this.userId, required this.name});
+}
+
+int? _parseHouseholdMemberUserId(Map<String, dynamic> e) {
+  for (final key in ['userId', 'id', 'memberId', 'user_id']) {
+    final v = e[key];
+    if (v == null) continue;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    final s = v.toString().trim();
+    if (s.isNotEmpty) return int.tryParse(s);
+  }
+  return null;
+}
+
+String? _parseHouseholdMemberDisplayName(Map<String, dynamic> e) {
+  final n = e['name'] as String? ??
+      e['nickname'] as String? ??
+      e['userName'] as String?;
+  final t = n?.trim();
+  return (t != null && t.isNotEmpty) ? t : null;
+}
 
 class AuthService {
   final ApiClient _apiClient = ApiClient();
@@ -88,8 +117,13 @@ class AuthService {
       
       // 토큰 저장
       if (kakaoAuthResponse.result != null) {
-        await StorageService.setToken(kakaoAuthResponse.result!.accessToken);
+        final access = kakaoAuthResponse.result!.accessToken;
+        await StorageService.setToken(access);
         await StorageService.setRefreshToken(kakaoAuthResponse.result!.refreshToken);
+        final jwtUid = _jwtPreferredNumericUserId(access);
+        if (jwtUid != null && jwtUid > 0) {
+          await StorageService.setUserId('$jwtUid');
+        }
       }
 
       return kakaoAuthResponse;
@@ -170,17 +204,28 @@ class AuthService {
     }
   }
 
-  /// 그룹(가구)에 속한 멤버 이름 목록. 정산 시 참여자 선택에 사용.
-  /// API 형식: `{ isSuccess, result: [ { name } ] }` 또는 `result.members` 등 유연히 파싱.
-  Future<List<String>> fetchHouseholdMemberNames() async {
+  /// 그룹 멤버 목록 (정산 API `memberIds` 연동).
+  ///
+  /// API 형식: `{ isSuccess, result: [ { userId, name } ] }` 또는 `result.members` 등.
+  Future<List<HouseholdMemberBrief>> fetchHouseholdMembers() async {
     try {
-      final response = await _apiClient.get(AppConfig.householdMembersEndpoint);
+      // 배포 서버에 경로가 없을 때 404가 나와도 예외·인터셉터 에러 로그를 줄이기 위해 허용
+      final response = await _apiClient.get(
+        AppConfig.householdMembersEndpoint,
+        options: Options(
+          validateStatus: (status) =>
+              status != null && (status == 200 || status == 404),
+        ),
+      );
+      if (response.statusCode == 404) {
+        return _fallbackHouseholdMembersBrief();
+      }
       final data = response.data;
       if (data is! Map<String, dynamic>) {
-        return _fallbackHouseholdMemberNames();
+        return _fallbackHouseholdMembersBrief();
       }
       if (data['isSuccess'] == false) {
-        return _fallbackHouseholdMemberNames();
+        return _fallbackHouseholdMembersBrief();
       }
       final dynamic result = data['result'];
       List<dynamic>? list;
@@ -194,27 +239,91 @@ class AuthService {
         if (m is List) list = m;
       }
       if (list == null || list.isEmpty) {
-        return _fallbackHouseholdMemberNames();
+        return _fallbackHouseholdMembersBrief();
       }
-      final names = <String>[];
+      final out = <HouseholdMemberBrief>[];
       for (final e in list) {
         if (e is Map<String, dynamic>) {
-          final n = e['name'] as String? ??
-              e['nickname'] as String? ??
-              e['userName'] as String?;
-          if (n != null && n.trim().isNotEmpty) {
-            names.add(n.trim());
+          final id = _parseHouseholdMemberUserId(e);
+          final name = _parseHouseholdMemberDisplayName(e);
+          if (id != null && id > 0 && name != null) {
+            out.add(HouseholdMemberBrief(userId: id, name: name));
           }
         }
       }
-      if (names.isEmpty) {
-        return _fallbackHouseholdMemberNames();
+      if (out.isEmpty) {
+        return _fallbackHouseholdMembersBrief();
       }
-      return names;
+      return out;
     } catch (e) {
-      debugPrint('fetchHouseholdMemberNames: $e');
-      return _fallbackHouseholdMemberNames();
+      return _fallbackHouseholdMembersBrief();
     }
+  }
+
+  Future<List<HouseholdMemberBrief>> _fallbackHouseholdMembersBrief() async {
+    final token = await StorageService.getToken();
+    final idStr = await StorageService.getUserId();
+    var uid = int.tryParse(idStr ?? '');
+    uid ??= _jwtPreferredNumericUserId(token);
+    final u = await getUserInfo();
+    final name = u?.name?.trim().isNotEmpty == true
+        ? u!.name!.trim()
+        : (await StorageService.getUserName())?.trim() ?? '나';
+    if (uid != null && uid > 0) {
+      return [HouseholdMemberBrief(userId: uid, name: name)];
+    }
+    return [];
+  }
+
+  /// JWT 클레임에서 서버 `memberIds`에 넣을 수 있는 양의 정수 user id 추출 (카카오 로그인 등으로 prefs에 id가 없을 때 보조).
+  static int? _jwtPreferredNumericUserId(String? token) {
+    if (token == null || token.isEmpty) return null;
+    try {
+      final segments = token.split('.');
+      if (segments.length < 2) return null;
+      var payload = segments[1];
+      final pad = payload.length % 4;
+      if (pad == 1) return null;
+      if (pad == 2) payload += '==';
+      if (pad == 3) payload += '=';
+      final jsonStr = utf8.decode(base64Url.decode(payload));
+      final decoded = jsonDecode(jsonStr);
+      if (decoded is! Map<String, dynamic>) return null;
+      int? fromVal(dynamic v) {
+        if (v == null) return null;
+        if (v is int) return v > 0 ? v : null;
+        if (v is num) {
+          final i = v.toInt();
+          return i > 0 ? i : null;
+        }
+        final s = v.toString().trim();
+        if (s.isEmpty) return null;
+        final n = int.tryParse(s);
+        return (n != null && n > 0) ? n : null;
+      }
+
+      for (final key in [
+        'userId',
+        'user_id',
+        'id',
+        'uid',
+        'memberId',
+        'member_id',
+      ]) {
+        final n = fromVal(decoded[key]);
+        if (n != null) return n;
+      }
+      return fromVal(decoded['sub']);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 그룹(가구)에 속한 멤버 이름 목록 (공과금 정산 등 UI용).
+  Future<List<String>> fetchHouseholdMemberNames() async {
+    final briefs = await fetchHouseholdMembers();
+    if (briefs.isEmpty) return _fallbackHouseholdMemberNames();
+    return briefs.map((e) => e.name).toList();
   }
 
   Future<List<String>> _fallbackHouseholdMemberNames() async {
@@ -234,73 +343,43 @@ class AuthService {
     return names;
   }
 
-  /// 사용자 정보 조회
-  /// 서버에서 사용자 정보를 가져오려고 시도하지만, 실패해도 예외를 던지지 않음
-  Future<UserModel?> getUserInfo() async {
+  /// JWT payload의 `sub` (GET /users/me 미구현 시 세션 식별용).
+  static String? _jwtSubject(String token) {
     try {
-      final response = await _apiClient.get(
-        AppConfig.updateUserNameEndpoint,
-      );
+      final segments = token.split('.');
+      if (segments.length < 2) return null;
+      var payload = segments[1];
+      final pad = payload.length % 4;
+      if (pad == 1) return null;
+      if (pad == 2) payload += '==';
+      if (pad == 3) payload += '=';
+      final jsonStr = utf8.decode(base64Url.decode(payload));
+      final map = jsonDecode(jsonStr);
+      if (map is Map<String, dynamic>) {
+        final sub = map['sub'];
+        return sub?.toString();
+      }
+    } catch (_) {}
+    return null;
+  }
 
-      // 응답 형식에 따라 UserModel로 변환
-      // 일반적으로 { result: { id, email, name, ... } } 형식일 것으로 예상
-      if (response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        
-        debugPrint('📥 /users/me API 응답 받음:');
-        debugPrint('  - isSuccess: ${data['isSuccess']}');
-        debugPrint('  - 전체 응답: $data');
-        
-        // isSuccess가 false인 경우 null 반환
-        if (data['isSuccess'] == false) {
-          debugPrint('  ⚠️ isSuccess가 false입니다');
-          return null;
-        }
-        
-        if (data['result'] != null) {
-          final result = data['result'];
-          debugPrint('  - result 타입: ${result.runtimeType}');
-          
-          if (result is Map<String, dynamic>) {
-            debugPrint('  - result 내용: $result');
-            debugPrint('  - result에 id 있음: ${result.containsKey('id')}');
-            debugPrint('  - result에 email 있음: ${result.containsKey('email')}');
-            debugPrint('  - result에 name 있음: ${result.containsKey('name')}');
-            debugPrint('  - result의 name 값: ${result['name']}');
-            
-            final userModel = UserModel.fromJson(result);
-            debugPrint('  ✅ UserModel 생성 성공');
-            debugPrint('    - id: ${userModel.id}');
-            debugPrint('    - email: ${userModel.email}');
-            debugPrint('    - name: ${userModel.name}');
-            
-            return userModel;
-          }
-        }
-        // result가 없으면 직접 UserModel로 변환 시도
-        debugPrint('  ⚠️ result가 없거나 Map이 아닙니다. 직접 변환 시도...');
-        try {
-          debugPrint('  - 직접 변환 시도: $data');
-          final userModel = UserModel.fromJson(data);
-          debugPrint('  ✅ 직접 변환 성공');
-          return userModel;
-        } catch (e) {
-          debugPrint('  ❌ 직접 변환 실패: $e');
-          return null;
-        }
-      }
-      debugPrint('  ❌ 응답이 Map이 아닙니다: ${response.data.runtimeType}');
-      return null;
-    } catch (e) {
-      // 서버 에러(500 등) 발생 시 null 반환 (로컬 스토리지 fallback 사용)
-      // 예외를 던지지 않고 조용히 실패 처리
-      debugPrint('❌ /users/me API 호출 실패: $e');
-      if (e is DioException && e.response != null) {
-        debugPrint('  - 에러 응답 상태 코드: ${e.response!.statusCode}');
-        debugPrint('  - 에러 응답 데이터: ${e.response!.data}');
-      }
-      return null;
-    }
+  /// 세션 사용자 정보 (로컬만). GET `/users/me`는 백엔드 미구현으로 호출하지 않음.
+  Future<UserModel?> getUserInfo() async {
+    final token = await StorageService.getToken();
+    if (token == null || token.isEmpty) return null;
+
+    final storedId = await StorageService.getUserId();
+    final id = (storedId != null && storedId.isNotEmpty)
+        ? storedId
+        : (_jwtSubject(token) ?? 'session');
+    final name = await StorageService.getUserName();
+
+    return UserModel(
+      id: id,
+      email: '',
+      name: name,
+      createdAt: DateTime.now(),
+    );
   }
 }
 

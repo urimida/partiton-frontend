@@ -1,49 +1,51 @@
-/// 공용 소비 표 한 행 (물품·공과금 공통)
-///
-/// 물품은 [majorCategory]·[minorCategory]·[detail]로 상품을 표기하고,
-/// [name]은 하위 호환·검색용으로 [displayLabel]과 동일하게 유지하는 것을 권장합니다.
+/// 공용 소비 표 한 줄 (물품 구매 / 공과금 공통).
 class SharedExpenseTableItem {
   final String name;
   final String date;
   final String amount;
   final String? quantity;
+  final bool manuallySettled;
 
-  /// 물품 대분류 (예: 식품)
+  /// 물품 API (`purchaseId`)
+  final int? purchaseId;
+  final String? categoryCode;
+  final String? subCategoryCode;
+
   final String? majorCategory;
-
-  /// 물품 소분류 (예: 시리얼·간식)
   final String? minorCategory;
-
-  /// 물품 구체 표기 (예: 콘프라이트 500g)
   final String? detail;
 
-  /// 앱 정산 플로우 없이 밖에서 정산한 경우 사용자가 표시한 완료 상태
-  final bool manuallySettled;
+  /// 공과금 API (`billId`, `utilityType`, 매월 결제일 1–31)
+  final int? billId;
+  final String? utilityTypeEnum;
+  /// 구버전 세부 일자(있을 때만). 신규 API는 [utilityPayDay] 사용.
+  final String? utilityDueDateIso;
+  /// 매달 결제일(1–31). API `payDay`와 동일.
+  final int? utilityPayDay;
 
   const SharedExpenseTableItem({
     required this.name,
     required this.date,
     required this.amount,
     this.quantity,
+    this.manuallySettled = false,
+    this.purchaseId,
+    this.categoryCode,
+    this.subCategoryCode,
     this.majorCategory,
     this.minorCategory,
     this.detail,
-    this.manuallySettled = false,
+    this.billId,
+    this.utilityTypeEnum,
+    this.utilityDueDateIso,
+    this.utilityPayDay,
   });
 
-  /// 표·목록에 쓰는 한 줄 라벨 (구조 필드가 있으면 `대 · 소 · 내용`, 없으면 [name])
+  /// 목록·정산 선택 UI 등에서 쓰는 표시명 (구조화된 물품 행은 세부 품목명 우선).
   String get displayLabel {
-    final m = majorCategory?.trim();
-    final s = minorCategory?.trim();
     final d = detail?.trim();
-    final hasStructured = (m != null && m.isNotEmpty) ||
-        (s != null && s.isNotEmpty) ||
-        (d != null && d.isNotEmpty);
-    if (!hasStructured) return name;
-    return [m, s, d]
-        .where((e) => e != null && e!.isNotEmpty)
-        .map((e) => e!)
-        .join(' · ');
+    if (d != null && d.isNotEmpty) return d;
+    return name;
   }
 
   SharedExpenseTableItem copyWith({
@@ -51,25 +53,34 @@ class SharedExpenseTableItem {
     String? date,
     String? amount,
     String? quantity,
+    bool? manuallySettled,
+    int? purchaseId,
+    String? categoryCode,
+    String? subCategoryCode,
     String? majorCategory,
     String? minorCategory,
     String? detail,
-    bool? manuallySettled,
-    bool clearMajorCategory = false,
-    bool clearMinorCategory = false,
-    bool clearDetail = false,
+    int? billId,
+    String? utilityTypeEnum,
+    String? utilityDueDateIso,
+    int? utilityPayDay,
   }) {
     return SharedExpenseTableItem(
       name: name ?? this.name,
       date: date ?? this.date,
       amount: amount ?? this.amount,
       quantity: quantity ?? this.quantity,
-      majorCategory:
-          clearMajorCategory ? null : (majorCategory ?? this.majorCategory),
-      minorCategory:
-          clearMinorCategory ? null : (minorCategory ?? this.minorCategory),
-      detail: clearDetail ? null : (detail ?? this.detail),
       manuallySettled: manuallySettled ?? this.manuallySettled,
+      purchaseId: purchaseId ?? this.purchaseId,
+      categoryCode: categoryCode ?? this.categoryCode,
+      subCategoryCode: subCategoryCode ?? this.subCategoryCode,
+      majorCategory: majorCategory ?? this.majorCategory,
+      minorCategory: minorCategory ?? this.minorCategory,
+      detail: detail ?? this.detail,
+      billId: billId ?? this.billId,
+      utilityTypeEnum: utilityTypeEnum ?? this.utilityTypeEnum,
+      utilityDueDateIso: utilityDueDateIso ?? this.utilityDueDateIso,
+      utilityPayDay: utilityPayDay ?? this.utilityPayDay,
     );
   }
 }

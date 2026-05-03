@@ -490,17 +490,36 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // 제목
-                            const Text(
-                              '집안일 자동 배정',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.white, // #FFF
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                fontFamily: 'Pretendard Variable',
-                                height: 1.15,
-                              ),
+                            Row(
+                              children: [
+                                const SizedBox(width: 40),
+                                const Expanded(
+                                  child: Text(
+                                    '집안일 자동 배정',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      fontFamily: 'Pretendard Variable',
+                                      height: 1.15,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: '닫기',
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  icon: Icon(
+                                    Icons.close_rounded,
+                                    color: Colors.white.withOpacity(0.9),
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 40,
+                                    minHeight: 40,
+                                  ),
+                                ),
+                              ],
                             ),
                           const SizedBox(height: 8),
                           // 부제목
@@ -743,7 +762,7 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
                 // 드롭다운 메뉴 - 최상위 레이어
                 if (_isDropdownOpen)
                   Positioned(
-                    top: 24 + 20 + 8 + 13 + 8 + 24 + 43, // 패딩 + 제목 + 여백 + 부제목 + 여백 + 카테고리 선택 칸 위치
+                    top: 24 + 40 + 8 + 13 + 8 + 24 + 43,
                     left: 24 + (350 - 259.331 - 48) / 2, // 모달 패딩 + 중앙 정렬
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,

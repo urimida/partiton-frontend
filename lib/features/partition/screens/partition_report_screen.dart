@@ -1,6 +1,14 @@
+import 'dart:async';
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:partition_app/core/network/api_exception.dart';
+import 'package:partition_app/features/auth/providers/auth_provider.dart';
+import 'package:partition_app/features/partition/models/partition_report_model.dart';
+import 'package:partition_app/features/partition/services/report_service.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_filter_chip.dart';
+import 'package:partition_app/shared/utils/partition_dummy_data_policy.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
 import 'package:partition_app/shared/widgets/glassmorphic_date_picker.dart';
 
@@ -17,6 +25,8 @@ class _ChoreReportItem {
   final int daysSinceLast;
   /// null이면 스마일 아이콘으로 대체
   final IconData? icon;
+  /// API: 조회 기간 전체 완료 횟수. null이면 카드에 표시 안 함
+  final int? totalCompleted;
 
   const _ChoreReportItem({
     required this.name,
@@ -27,6 +37,7 @@ class _ChoreReportItem {
     required this.lowCount,
     required this.daysSinceLast,
     this.icon,
+    this.totalCompleted,
   });
 }
 
@@ -66,6 +77,65 @@ class _SettlementReportRow {
 
   const _SettlementReportRow(this.content, this.date, this.amount, this.note);
 }
+
+const List<_ChoreReportItem> _kReportDummyChoreItems = [
+  _ChoreReportItem(
+    name: '설거지',
+    difficultyStars: 3,
+    topPerson: '민지',
+    topCount: 12,
+    lowPerson: '우진',
+    lowCount: 3,
+    daysSinceLast: 1,
+    icon: Icons.local_dining_rounded,
+  ),
+  _ChoreReportItem(
+    name: '청소기 돌리기',
+    difficultyStars: 2,
+    topPerson: '지원',
+    topCount: 8,
+    lowPerson: '민지',
+    lowCount: 2,
+    daysSinceLast: 4,
+    icon: null,
+  ),
+  _ChoreReportItem(
+    name: '분리수거',
+    difficultyStars: 5,
+    topPerson: '우진',
+    topCount: 6,
+    lowPerson: '지원',
+    lowCount: 1,
+    daysSinceLast: 2,
+    icon: Icons.recycling_rounded,
+  ),
+];
+
+const List<_UtilityDeltaRow> _kReportDummyUtilityDeltas = [
+  _UtilityDeltaRow('전기세', '42,000원', '48,500원', '+15.5%'),
+  _UtilityDeltaRow('가스비', '18,200원', '15,900원', '-12.6%'),
+];
+
+const List<List<String>> _kReportDummyConsumptionTopRows = [
+  ['최고 지출 항목', '라면 5입 묶음 (45,000원)'],
+  ['최다 결제 항목', '생수 2L (결제 8회)'],
+];
+
+const List<_ReservationReportRow> _kReportDummyReservationRows = [
+  _ReservationReportRow('욕실', '우진 (12회)', '지원 (2회)', '평균 45분'),
+  _ReservationReportRow('세탁기', '민지 (9회)', '우진 (1회)', '평균 60분'),
+  _ReservationReportRow('공용 거실 TV', '지원 (6회)', '민지 (0회)', '평균 90분'),
+];
+
+const List<_SettlementReportRow> _kReportDummySettlementGoodsRows = [
+  _SettlementReportRow('콘푸라이트 500g', '25.05.04.', '5,980원', '3개'),
+  _SettlementReportRow('두루마리 휴지', '25.05.05.', '8,000원', '3개'),
+];
+
+const List<_SettlementReportRow> _kReportDummySettlementUtilRows = [
+  _SettlementReportRow('전기세', '15일', '45,000원', '자동이체'),
+  _SettlementReportRow('월세', '5일', '600,000원', '고정'),
+];
 
 /// 파티션 리포트 — 공용소비·게시판과 동일 헤더·글래스 톤
 class PartitionReportScreen extends StatefulWidget {
@@ -108,7 +178,23 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   final PageController _chorePageController = PageController();
   int _chorePageIndex = 0;
 
-  late final List<_ChoreReportItem> _choreItems;
+  final ReportService _reportService = ReportService();
+
+  List<_ChoreReportItem> _choreItems = [];
+  /// 디버그·미로그인 시에만 더미 행 표시
+  bool _reportUseDummy = false;
+  bool? _reportDummySynced;
+
+  bool _reportLoading = false;
+  List<List<String>> _apiConsumptionTopRows = [];
+  List<_UtilityDeltaRow> _apiUtilityDeltas = [];
+  List<_ReservationReportRow> _apiReservationRows = [];
+
+  /// GET `/reports/settlement` — 정산 완료 공용물품·공과금
+  List<_SettlementReportRow> _apiSettlementGoodsRows = [];
+  List<_SettlementReportRow> _apiSettlementBillRows = [];
+  bool _settlementLoading = false;
+  String? _settlementError;
 
   @override
   void initState() {
@@ -119,39 +205,279 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
     _rangeEnd = today;
     _settlementStart = DateTime(today.year, today.month, 1);
     _settlementEnd = today;
+  }
 
-    _choreItems = const [
-      _ChoreReportItem(
-        name: '설거지',
-        difficultyStars: 3,
-        topPerson: '민지',
-        topCount: 12,
-        lowPerson: '우진',
-        lowCount: 3,
-        daysSinceLast: 1,
-        icon: Icons.local_dining_rounded,
-      ),
-      _ChoreReportItem(
-        name: '청소기 돌리기',
-        difficultyStars: 2,
-        topPerson: '지원',
-        topCount: 8,
-        lowPerson: '민지',
-        lowCount: 2,
-        daysSinceLast: 4,
-        icon: null,
-      ),
-      _ChoreReportItem(
-        name: '분리수거',
-        difficultyStars: 5,
-        topPerson: '우진',
-        topCount: 6,
-        lowPerson: '지원',
-        lowCount: 1,
-        daysSinceLast: 2,
-        icon: Icons.recycling_rounded,
-      ),
-    ];
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final useDummy = usePartitionDummyData(
+      Provider.of<AuthProvider>(context).isAuthenticated,
+    );
+    if (_reportDummySynced == useDummy) return;
+    _reportDummySynced = useDummy;
+    setState(() {
+      _reportUseDummy = useDummy;
+      _choreItems = useDummy
+          ? List<_ChoreReportItem>.from(_kReportDummyChoreItems)
+          : <_ChoreReportItem>[];
+      _chorePageIndex = 0;
+      if (useDummy) {
+        _apiConsumptionTopRows = [];
+        _apiUtilityDeltas = [];
+        _apiReservationRows = [];
+        _apiSettlementGoodsRows = [];
+        _apiSettlementBillRows = [];
+        _settlementLoading = false;
+        _settlementError = null;
+        _reportLoading = false;
+      } else {
+        _apiSettlementGoodsRows = [];
+        _apiSettlementBillRows = [];
+        _settlementError = null;
+        _settlementLoading = true;
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_chorePageController.hasClients) {
+        _chorePageController.jumpToPage(0);
+      }
+      if (!useDummy) {
+        _scheduleReportLoad();
+        _scheduleSettlementLoad();
+      }
+    });
+  }
+
+  bool _shouldUseLiveReportApi(BuildContext context) =>
+      !usePartitionDummyData(
+        Provider.of<AuthProvider>(context, listen: false).isAuthenticated,
+      );
+
+  String _dateToIso(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// API `purchaseDate` yyyy-MM-dd → 테이블용 yy.MM.dd.
+  String _formatPurchaseDateShort(String iso) {
+    final parts = iso.split('-');
+    if (parts.length == 3) {
+      final y = int.tryParse(parts[0]) ?? 0;
+      final yy = (y % 100).toString().padLeft(2, '0');
+      return '$yy.${parts[1]}.${parts[2]}.';
+    }
+    return iso;
+  }
+
+  /// API `billingMonth` yyyy-MM → 테이블용 yyyy.MM.
+  String _formatBillingMonthShort(String ym) {
+    final parts = ym.split('-');
+    if (parts.length >= 2) {
+      return '${parts[0]}.${parts[1].padLeft(2, '0')}.';
+    }
+    return ym;
+  }
+
+  IconData? _iconForChoreType(String choreType) {
+    switch (choreType.toUpperCase()) {
+      case 'DISH_WASHING':
+      case 'DISHWASHING':
+        return Icons.local_dining_rounded;
+      case 'TRASH_RECYCLING':
+      case 'RECYCLING':
+        return Icons.recycling_rounded;
+      case 'VACUUM_CLEANING':
+      case 'CLEANING':
+        return Icons.cleaning_services_rounded;
+      case 'LAUNDRY':
+        return Icons.local_laundry_service_rounded;
+      case 'PET_CARE':
+        return Icons.pets_rounded;
+      default:
+        return null;
+    }
+  }
+
+  String _commaWon(int n) =>
+      '${n.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]},')}원';
+
+  String _billChangeRateLabel(double rate) =>
+      '${rate > 0 ? '+' : ''}${rate.toStringAsFixed(1)}%';
+
+  List<_ChoreReportItem> _mapChoresFromApi(List<ChoreReportEntry> list) =>
+      list
+          .map(
+            (e) => _ChoreReportItem(
+              name: e.choreName,
+              difficultyStars:
+                  e.avgDifficulty.round().clamp(1, 5),
+              topPerson:
+                  e.topPerformer?.userName.isNotEmpty == true
+                      ? e.topPerformer!.userName
+                      : '-',
+              topCount: e.topPerformer?.count ?? 0,
+              lowPerson:
+                  e.bottomPerformer?.userName.isNotEmpty == true
+                      ? e.bottomPerformer!.userName
+                      : '-',
+              lowCount: e.bottomPerformer?.count ?? 0,
+              daysSinceLast: e.lastPerformedDaysAgo ?? -1,
+              icon: _iconForChoreType(e.choreType),
+              totalCompleted: e.totalCount,
+            ),
+          )
+          .toList();
+
+  List<List<String>> _rowsFromSupplies(ReportSupplies s) {
+    final rows = <List<String>>[];
+    final hi = s.highestAmountItem;
+    if (hi != null && hi.itemName.isNotEmpty) {
+      rows.add([
+        '최고 지출 항목',
+        '${hi.itemName} (${_commaWon(hi.amount)})',
+      ]);
+    }
+    final mp = s.mostPurchasedItem;
+    if (mp != null && mp.itemName.isNotEmpty) {
+      rows.add([
+        '최다 구매 항목',
+        '${mp.itemName} (구매 ${mp.purchaseCount}건)',
+      ]);
+    }
+    return rows;
+  }
+
+  List<_UtilityDeltaRow> _rowsFromBills(List<ReportBillDelta> bills) => bills
+      .map(
+        (b) => _UtilityDeltaRow(
+          b.utilityTypeName.isNotEmpty ? b.utilityTypeName : b.utilityType,
+          _commaWon(b.previousAmount),
+          _commaWon(b.currentAmount),
+          _billChangeRateLabel(b.changeRate),
+        ),
+      )
+      .toList();
+
+  String _reservationPerfLabel(ReportPerformer? p) =>
+      p != null && p.userName.isNotEmpty ? '${p.userName} (${p.count}회)' : '-';
+
+  List<_ReservationReportRow> _rowsFromReservations(
+    List<ReservationReportEntry> list,
+  ) =>
+      list
+          .map(
+            (e) => _ReservationReportRow(
+              e.itemName,
+              _reservationPerfLabel(e.topPerformer),
+              _reservationPerfLabel(e.bottomPerformer),
+              e.avgDurationMinutes != null
+                  ? '평균 ${e.avgDurationMinutes}분'
+                  : '-',
+            ),
+          )
+          .toList();
+
+  void _scheduleReportLoad() {
+    if (!mounted || !_shouldUseLiveReportApi(context)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_loadReport());
+    });
+  }
+
+  void _scheduleSettlementLoad() {
+    if (!mounted || !_shouldUseLiveReportApi(context)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_loadSettlementReport());
+    });
+  }
+
+  Future<void> _loadSettlementReport() async {
+    if (!mounted || !_shouldUseLiveReportApi(context)) return;
+    setState(() {
+      _settlementLoading = true;
+      _settlementError = null;
+    });
+    try {
+      final result = await _reportService.fetchSettlementReport(
+        startDate: _dateToIso(_settlementStart),
+        endDate: _dateToIso(_settlementEnd),
+      );
+      if (!mounted) return;
+      setState(() {
+        _settlementLoading = false;
+        _apiSettlementGoodsRows = result.supplies
+            .map(
+              (s) => _SettlementReportRow(
+                s.itemName.isNotEmpty ? s.itemName : '-',
+                _formatPurchaseDateShort(s.purchaseDate),
+                _commaWon(s.amount),
+                '${s.quantity}개',
+              ),
+            )
+            .toList();
+        _apiSettlementBillRows = result.bills
+            .map(
+              (b) => _SettlementReportRow(
+                b.utilityTypeName.isNotEmpty
+                    ? b.utilityTypeName
+                    : b.utilityType,
+                _formatBillingMonthShort(b.billingMonth),
+                _commaWon(b.amount),
+                '-',
+              ),
+            )
+            .toList();
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _settlementLoading = false;
+        _settlementError = e.message;
+        _apiSettlementGoodsRows = [];
+        _apiSettlementBillRows = [];
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _settlementLoading = false;
+        _settlementError = '정산 리포트를 불러오지 못했습니다.';
+        _apiSettlementGoodsRows = [];
+        _apiSettlementBillRows = [];
+      });
+    }
+  }
+
+  Future<void> _loadReport() async {
+    if (!mounted || !_shouldUseLiveReportApi(context)) return;
+    setState(() => _reportLoading = true);
+    try {
+      final result = await _reportService.fetchReport(
+        startDate: _dateToIso(_rangeStart),
+        endDate: _dateToIso(_rangeEnd),
+      );
+      if (!mounted) return;
+      setState(() {
+        _reportLoading = false;
+        _choreItems = _mapChoresFromApi(result.chores);
+        _apiConsumptionTopRows = _rowsFromSupplies(result.supplies);
+        _apiUtilityDeltas = _rowsFromBills(result.bills);
+        _apiReservationRows = _rowsFromReservations(result.reservations);
+        _chorePageIndex = 0;
+      });
+      if (_chorePageController.hasClients) {
+        _chorePageController.jumpToPage(0);
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _reportLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _reportLoading = false);
+    }
   }
 
   @override
@@ -198,6 +524,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
           if (_rangeEnd.isBefore(_rangeStart)) _rangeStart = _rangeEnd;
         }
       });
+      _scheduleReportLoad();
     }
   }
 
@@ -234,6 +561,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
           }
         }
       });
+      _scheduleSettlementLoad();
     }
   }
 
@@ -263,6 +591,12 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
     return Column(
       children: [
         _buildHeader(),
+        if (!_reportUseDummy && _reportLoading)
+          const LinearProgressIndicator(
+            minHeight: 2,
+            backgroundColor: Color(0x33FFFFFF),
+            color: Colors.white70,
+          ),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -531,37 +865,50 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
           const SizedBox(height: 14),
           SizedBox(
             height: 216,
-            child: PageView.builder(
-              controller: _chorePageController,
-              itemCount: _choreItems.length,
-              onPageChanged: (i) => setState(() => _chorePageIndex = i),
-              itemBuilder: (context, i) =>
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: _choreCard(_choreItems[i]),
+            child: _choreItems.isEmpty
+                ? Center(
+                    child: Text(
+                      '집안일 요약이 없어요.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.55),
+                        fontSize: 14,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                  )
+                : PageView.builder(
+                    controller: _chorePageController,
+                    itemCount: _choreItems.length,
+                    onPageChanged: (i) => setState(() => _chorePageIndex = i),
+                    itemBuilder: (context, i) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: _choreCard(_choreItems[i]),
+                    ),
                   ),
-            ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              _choreItems.length,
-              (i) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: Container(
-                  width: i == _chorePageIndex ? 8 : 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(3),
-                    color: i == _chorePageIndex
-                        ? Colors.white.withOpacity(0.95)
-                        : Colors.white.withOpacity(0.35),
+          if (_choreItems.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                _choreItems.length,
+                (i) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: Container(
+                    width: i == _chorePageIndex ? 8 : 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(3),
+                      color: i == _chorePageIndex
+                          ? Colors.white.withOpacity(0.95)
+                          : Colors.white.withOpacity(0.35),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -618,9 +965,20 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
             const SizedBox(height: 6),
             _choreDifficultyStarsRow(c.difficultyStars),
             const SizedBox(height: 10),
-            _choreLine('가장 많이 한 사람', '${c.topPerson} · ${c.topCount}회'),
-            _choreLine('가장 적게 한 사람', '${c.lowPerson} · ${c.lowCount}회'),
-            _choreLine('최근 실시', '${c.daysSinceLast}일 전'),
+            _choreLine(
+              '가장 많이 한 사람',
+              c.topPerson == '-' ? '-' : '${c.topPerson} · ${c.topCount}회',
+            ),
+            _choreLine(
+              '가장 적게 한 사람',
+              c.lowPerson == '-' ? '-' : '${c.lowPerson} · ${c.lowCount}회',
+            ),
+            _choreLine(
+              '최근 실시',
+              c.daysSinceLast < 0 ? '데이터 없음' : '${c.daysSinceLast}일 전',
+            ),
+            if (c.totalCompleted != null)
+              _choreLine('기간 내 완료', '${c.totalCompleted}회'),
           ],
         ),
       ),
@@ -661,10 +1019,17 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   }
 
   Widget _buildConsumptionSection() {
-    const utilityDeltas = [
-      _UtilityDeltaRow('전기세', '42,000원', '48,500원', '+15.5%'),
-      _UtilityDeltaRow('가스비', '18,200원', '15,900원', '-12.6%'),
-    ];
+    final topRows = _reportUseDummy
+        ? _kReportDummyConsumptionTopRows
+        : _apiConsumptionTopRows;
+
+    final utilityDeltaRows = _reportUseDummy
+        ? _kReportDummyUtilityDeltas
+        : _apiUtilityDeltas;
+
+    final showUtilityDummy = _reportUseDummy && _withinOneMonth;
+    final showUtilityApi =
+        !_reportUseDummy && utilityDeltaRows.isNotEmpty;
 
     return FrostedPanel(
       borderRadius: BorderRadius.circular(_borderRadiusLarge),
@@ -675,22 +1040,35 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
         children: [
           _sectionTitle('공용 소비 물품'),
           const SizedBox(height: 14),
-          _simpleTable(
-            headers: const ['구분', '내용'],
-            flexes: const [2, 5],
-            rows: const [
-              ['최고 지출 항목', '라면 5입 묶음 (45,000원)'],
-              ['최다 결제 항목', '생수 2L (결제 8회)'],
-            ],
-          ),
-          if (_withinOneMonth) ...[
+          if (topRows.isEmpty && !_reportUseDummy)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                '해당 기간 공용 소비 요약이 없어요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.55),
+                  fontSize: 13,
+                  fontFamily: 'Pretendard Variable',
+                ),
+              ),
+            )
+          else
+            _simpleTable(
+              headers: const ['구분', '내용'],
+              flexes: const [2, 5],
+              rows: topRows,
+            ),
+          if (showUtilityDummy || showUtilityApi) ...[
             const SizedBox(height: 28),
             _sectionTitle('공과금 변동'),
             const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 5),
               child: Text(
-                '전월 대비 ±10% 이상, 기간 31일 이내',
+                _reportUseDummy
+                    ? '전월 대비 ±10% 이상, 기간 31일 이내'
+                    : '전월 대비 ±10% 이상 변동만 표시돼요.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.58),
@@ -705,17 +1083,28 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
             _simpleTable(
               headers: const ['항목', '전월', '당월', '변동'],
               flexes: const [2, 2, 2, 2],
-              rows: utilityDeltas
+              rows: utilityDeltaRows
                   .map((e) => [e.name, e.prevMonth, e.thisMonth, e.rateLabel])
                   .toList(),
             ),
-          ] else ...[
+          ] else if (_reportUseDummy && !_withinOneMonth) ...[
             const SizedBox(height: 10),
             Text(
               '공과금 변동 요약은 조회 기간이 31일 이내일 때만 표시돼요.',
               style: TextStyle(
                 color: Colors.white.withOpacity(0.5),
                 fontSize: 11,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+          ] else if (!_reportUseDummy) ...[
+            const SizedBox(height: 20),
+            Text(
+              '전월 대비 ±10% 이상 변동된 공과금이 없어요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.5),
+                fontSize: 12,
                 fontFamily: 'Pretendard Variable',
               ),
             ),
@@ -726,11 +1115,9 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   }
 
   Widget _buildReservationSection() {
-    const rows = [
-      _ReservationReportRow('욕실', '우진 (12회)', '지원 (2회)', '평균 45분'),
-      _ReservationReportRow('세탁기', '민지 (9회)', '우진 (1회)', '평균 60분'),
-      _ReservationReportRow('공용 거실 TV', '지원 (6회)', '민지 (0회)', '평균 90분'),
-    ];
+    final rows = _reportUseDummy
+        ? _kReportDummyReservationRows
+        : _apiReservationRows;
 
     return FrostedPanel(
       borderRadius: BorderRadius.circular(_borderRadiusLarge),
@@ -741,29 +1128,50 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
         children: [
           _sectionTitle('예약'),
           const SizedBox(height: 14),
-          _simpleTable(
-            headers: const ['물품', '가장 많이 사용', '가장 적게 사용', '사용 시간'],
-            flexes: const [2, 2, 2, 2],
-            rows: rows
-                .map((e) => [e.item, e.mostUser, e.leastUser, e.usageTime])
-                .toList(),
-          ),
+          if (rows.isEmpty && !_reportUseDummy)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                '해당 기간 예약 요약이 없어요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.55),
+                  fontSize: 13,
+                  fontFamily: 'Pretendard Variable',
+                ),
+              ),
+            )
+          else
+            _simpleTable(
+              headers: const ['물품', '가장 많이 사용', '가장 적게 사용', '사용 시간'],
+              flexes: const [2, 2, 2, 2],
+              rows: rows
+                  .map((e) => [e.item, e.mostUser, e.leastUser, e.usageTime])
+                  .toList(),
+            ),
         ],
       ),
     );
   }
 
   Widget _buildSettlementSection() {
-    const goodsRows = [
-      _SettlementReportRow('콘푸라이트 500g', '25.05.04.', '5,980원', '3개'),
-      _SettlementReportRow('두루마리 휴지', '25.05.05.', '8,000원', '3개'),
-    ];
-    const utilRows = [
-      _SettlementReportRow('전기세', '15일', '45,000원', '자동이체'),
-      _SettlementReportRow('월세', '5일', '600,000원', '고정'),
-    ];
+    final goodsRows = _reportUseDummy
+        ? _kReportDummySettlementGoodsRows
+        : _apiSettlementGoodsRows;
+    final utilRows = _reportUseDummy
+        ? _kReportDummySettlementUtilRows
+        : _apiSettlementBillRows;
 
     final rows = _settlementFilter == 0 ? goodsRows : utilRows;
+
+    final utilHeaders = _reportUseDummy
+        ? const ['내용', '납부일', '납부액', '비고']
+        : const ['내용', '청구월', '금액', '비고'];
+
+    final showLiveEmptyHint = !_reportUseDummy &&
+        !_settlementLoading &&
+        _settlementError == null &&
+        rows.isEmpty;
 
     return FrostedPanel(
       borderRadius: BorderRadius.circular(_borderRadiusLarge),
@@ -811,15 +1219,58 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          _simpleTable(
-            headers: _settlementFilter == 0
-                ? const ['내용', '날짜', '금액', '수량']
-                : const ['내용', '날짜', '금액', '비고'],
-            flexes: const [3, 2, 2, 2],
-            rows: rows
-                .map((e) => [e.content, e.date, e.amount, e.note])
-                .toList(),
-          ),
+          if (!_reportUseDummy && _settlementLoading) ...[
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white54,
+                  ),
+                ),
+              ),
+            ),
+          ] else if (!_reportUseDummy && _settlementError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                _settlementError!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.72),
+                  fontSize: 13,
+                  fontFamily: 'Pretendard Variable',
+                  height: 1.35,
+                ),
+              ),
+            )
+          else if (showLiveEmptyHint)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                '해당 기간에 정산 완료된 내역이 없어요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.55),
+                  fontSize: 13,
+                  fontFamily: 'Pretendard Variable',
+                  height: 1.35,
+                ),
+              ),
+            )
+          else
+            _simpleTable(
+              headers: _settlementFilter == 0
+                  ? const ['내용', '날짜', '금액', '수량']
+                  : utilHeaders,
+              flexes: const [3, 2, 2, 2],
+              rows: rows
+                  .map((e) => [e.content, e.date, e.amount, e.note])
+                  .toList(),
+            ),
         ],
       ),
     );

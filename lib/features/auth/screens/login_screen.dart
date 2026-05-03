@@ -6,7 +6,6 @@ import 'package:partition_app/core/storage/storage_service.dart';
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/features/auth/services/kakao_auth_service.dart';
-import 'package:partition_app/features/auth/models/user_model.dart';
 import 'package:partition_app/shared/utils/debug_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -23,16 +22,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<String> _getTargetRoute() async {
     final authService = AuthService();
     
-    // 서버에서 사용자 정보 조회 시도 (실패해도 계속 진행)
-    UserModel? userInfo;
-    try {
-      userInfo = await authService.getUserInfo();
-    } catch (e) {
-      // 서버 에러 발생해도 무시하고 로컬 스토리지로 fallback
-      DebugHelper.log('사용자 정보 조회 실패 (로컬 스토리지 사용): $e');
-    }
-    
-    // 1. 닉네임 확인 (서버 정보 우선, 없으면 로컬 스토리지 확인)
+    final userInfo = await authService.getUserInfo();
+
+    // 1. 닉네임 확인 (세션 모델·로컬 스토리지)
     String? userName = userInfo?.name;
     if (userName == null || userName.isEmpty) {
       userName = await StorageService.getUserName();
@@ -40,7 +32,6 @@ class _LoginScreenState extends State<LoginScreen> {
         return AppRouter.onboardingSurvey; // 닉네임 입력 화면
       }
     } else {
-      // 서버에서 가져온 이름을 로컬 스토리지에 저장
       await StorageService.setUserName(userName);
     }
 

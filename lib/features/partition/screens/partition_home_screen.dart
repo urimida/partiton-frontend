@@ -4,7 +4,6 @@ import 'package:partition_app/shared/widgets/home_calendar_widget.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
 import 'package:partition_app/shared/widgets/chore_assignment_modal.dart';
 import 'package:partition_app/shared/widgets/schedule_registration_modal.dart';
-
 class PartitionHomeScreen extends StatefulWidget {
   const PartitionHomeScreen({super.key});
 

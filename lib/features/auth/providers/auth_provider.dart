@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:partition_app/core/network/api_exception.dart';
+import 'package:partition_app/core/push/fcm_registration_service.dart';
+import 'package:partition_app/core/storage/storage_service.dart';
 import 'package:partition_app/features/auth/models/user_model.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
-import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/shared/utils/debug_helper.dart';
-import 'package:partition_app/core/storage/storage_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
@@ -31,6 +34,7 @@ class AuthProvider extends ChangeNotifier {
       DebugHelper.log('사용자 ID: ${_user?.id}');
       DebugHelper.log('사용자 이메일: ${_user?.email}');
       _setLoading(false);
+      unawaited(FcmRegistrationService.registerIfLoggedIn());
       return true;
     } on ApiException catch (e) {
       _setError(e.message);
@@ -70,31 +74,18 @@ class AuthProvider extends ChangeNotifier {
         DebugHelper.log('User Role: $userRole');
       }
       
-      // 로그인 성공 후 서버에서 사용자 정보 가져오기
-      try {
-        final userInfo = await _authService.getUserInfo();
-        if (userInfo != null) {
-          _user = userInfo;
-          DebugHelper.log('✅ 사용자 정보 가져오기 성공');
-          DebugHelper.log('사용자 이름: ${userInfo.name}');
-          DebugHelper.log('사용자 이메일: ${userInfo.email}');
-          
-          // 사용자 이름을 로컬 스토리지에 저장
-          if (userInfo.name != null && userInfo.name!.isNotEmpty) {
-            await StorageService.setUserName(userInfo.name!);
-            DebugHelper.log('✅ 사용자 이름 로컬 스토리지에 저장: ${userInfo.name}');
-          }
-          
-          notifyListeners();
-        } else {
-          DebugHelper.log('⚠️ 사용자 정보가 null입니다');
-        }
-      } catch (e) {
-        DebugHelper.log('⚠️ 사용자 정보 가져오기 실패 (계속 진행): $e');
-        // 사용자 정보 가져오기 실패해도 로그인은 성공으로 처리
+      // GET /users/me 미구현 — 로컬 토큰·저장 이름으로만 세션 사용자 구성
+      _user = await _authService.getUserInfo();
+      if (_user?.name != null && _user!.name!.isNotEmpty) {
+        await StorageService.setUserName(_user!.name!);
+        DebugHelper.log('✅ 저장된 사용자 이름 유지: ${_user!.name}');
+      } else {
+        DebugHelper.log('세션 사용자 id: ${_user?.id} (이름은 온보딩 등에서 설정)');
       }
-      
+      notifyListeners();
+
       _setLoading(false);
+      unawaited(FcmRegistrationService.registerIfLoggedIn());
       return (success: true, userRole: userRole);
     } on ApiException catch (e) {
       _setError(e.message);
@@ -124,6 +115,7 @@ class AuthProvider extends ChangeNotifier {
       );
       _user = authResponse.user;
       _setLoading(false);
+      unawaited(FcmRegistrationService.registerIfLoggedIn());
       return true;
     } on ApiException catch (e) {
       _setError(e.message);
@@ -137,6 +129,7 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    FcmRegistrationService.onLogout();
     await _authService.logout();
     _user = null;
     _clearError();
@@ -147,8 +140,18 @@ class AuthProvider extends ChangeNotifier {
     final isAuth = await _authService.isAuthenticated();
     if (!isAuth) {
       _user = null;
+      notifyListeners();
+      return;
+    }
+    final userInfo = await _authService.getUserInfo();
+    _user = userInfo;
+    if (userInfo != null &&
+        userInfo.name != null &&
+        userInfo.name!.isNotEmpty) {
+      await StorageService.setUserName(userInfo.name!);
     }
     notifyListeners();
+    unawaited(FcmRegistrationService.registerIfLoggedIn());
   }
 
   /// 디버그용: 더미 유저로 로그인 상태 설정

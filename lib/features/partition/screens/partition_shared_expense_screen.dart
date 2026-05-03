@@ -1,15 +1,28 @@
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:ui';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
+import 'package:partition_app/features/auth/providers/auth_provider.dart';
+import 'package:partition_app/features/partition/controllers/alarm_navigation_controller.dart';
+import 'package:partition_app/features/partition/models/alarm_model.dart';
 import 'package:partition_app/features/partition/models/shared_expense_table_item.dart';
+import 'package:partition_app/features/partition/models/supply_purchase_model.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_filter_chip.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_manual_modal.dart';
-import 'package:partition_app/features/partition/widgets/utility_bill_add_modal.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_item_detail_sheet.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
 import 'package:partition_app/shared/widgets/glassmorphic_date_picker.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
+import 'package:partition_app/features/partition/services/supply_service.dart';
+import 'package:partition_app/features/partition/services/utility_bill_service.dart';
+import 'package:partition_app/features/partition/models/supply_category_model.dart';
+import 'package:partition_app/core/network/api_exception.dart';
+import 'package:partition_app/shared/utils/partition_dummy_data_policy.dart';
 
 class PartitionSharedExpenseScreen extends StatefulWidget {
   const PartitionSharedExpenseScreen({super.key});
@@ -31,8 +44,10 @@ class _PartitionSharedExpenseScreenState
   static const double _scrollExtraTailSpace = 56.0;
   /// 물품/공과금 칩 한 줄 높이(패딩 포함 추정) — 대칭 간격 계산용
   static const double _filterChipRowHeight = 46.0;
-  /// 헤더↔물품·공과금 칩, 칩↔표 카드 세로 간격만 축소 (1.0 = 기존 중앙 배치)
-  static const double _chipVerticalSpacingScale = 0.5;
+  /// 남는 세로가 적을 때도 헤더↔칩↔카드 사이가 0으로 붙지 않도록 하는 최소 간격
+  static const double _chipOuterVerticalMinGap = 18.0;
+  /// `band`에서 나눈 대칭 여백에 곱함 (1.0 = 남는 높이를 그대로 위·아래에 분배)
+  static const double _chipVerticalSpacingScale = 1.0;
   static const double _spacingSmall = 10.0;
   static const double _spacingMedium = 16.0;
   static const double _spacingLarge = 20.0;
@@ -46,12 +61,18 @@ class _PartitionSharedExpenseScreenState
   late DateTime _startDate;
   late DateTime _endDate;
 
-  /// 표 데이터 (수동 추가·수정 반영)
-  /// 필드에서 즉시 초기화 — `late`+initState만 쓰면 핫 리로드 시 LateInitializationError
-  List<SharedExpenseTableItem> _goodsExpenseItems =
-      List<SharedExpenseTableItem>.from(_dummyItemsForSharedExpenseTable(0));
-  List<SharedExpenseTableItem> _utilityExpenseItems =
-      List<SharedExpenseTableItem>.from(_dummyItemsForSharedExpenseTable(1));
+  /// 표 데이터 (수동 추가·수정 반영). 더미는 디버그·미로그인 시에만 채움.
+  List<SharedExpenseTableItem> _goodsExpenseItems = [];
+  List<SharedExpenseTableItem> _utilityExpenseItems = [];
+  bool? _sharedExpenseDummySynced;
+  AlarmNavigationController? _alarmNav;
+  bool _alarmListenerAttached = false;
+
+  final SupplyService _supplyService = SupplyService();
+  final UtilityBillService _utilityBillService = UtilityBillService();
+  final AuthService _authService = AuthService();
+  bool _goodsPurchasesLoading = false;
+  bool _utilityBillsLoading = false;
 
   /// 표는 세로 스크롤 대신 좌우 페이지로 넘김
   /// (필드에서 즉시 초기화: 핫 리로드 시 initState가 다시 안 돌아 late 미초기화 방지)
@@ -63,7 +84,7 @@ class _PartitionSharedExpenseScreenState
   final Set<int> _selectedRowIndices = <int>{};
 
   static const int _tableItemsPerPage = 5;
-  /// 표 `PageView` 세로 고정 높이 — 행은 `spaceBetween`으로 이 안에서 간격 분배
+  /// 표 `PageView` 세로 고정 높이 — 행은 `_tableItemsPerPage`칸 위에서부터 고정 슬롯
   static const double _tablePageViewHeightFixed = 132.0;
 
   double get _tablePageViewHeight => _tablePageViewHeightFixed;
@@ -72,12 +93,320 @@ class _PartitionSharedExpenseScreenState
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _startDate = DateTime(now.year, now.month, 4);
-    _endDate = DateTime(now.year, now.month, 4);
+    final today = DateTime(now.year, now.month, now.day);
+    // 오늘 포함 최근 7일 (이전 6일 + 오늘)
+    _endDate = today;
+    _startDate = today.subtract(const Duration(days: 6));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _tryConsumeAlarmNavigationPending();
+    });
+  }
+
+  void _attachAlarmNavigationListenerIfNeeded() {
+    final nav =
+        Provider.of<AlarmNavigationController>(context, listen: false);
+    _alarmNav ??= nav;
+    if (_alarmListenerAttached) return;
+    _alarmListenerAttached = true;
+    _alarmNav!.addListener(_onAlarmNavigationFromController);
+  }
+
+  void _onAlarmNavigationFromController() {
+    _tryConsumeAlarmNavigationPending();
+  }
+
+  void _tryConsumeAlarmNavigationPending() {
+    if (!mounted) return;
+    final nav = _alarmNav ??
+        Provider.of<AlarmNavigationController>(context, listen: false);
+    _alarmNav = nav;
+    final pending = nav.takePending();
+    if (pending == null) return;
+    unawaited(_openSettlementForAlarmPending(pending));
+  }
+
+  /// 알림 `referenceId`(settlementId)로 공용소비 정산 UI를 엽니다 (문서 흐름).
+  Future<void> _openSettlementForAlarmPending(AlarmNavPending pending) async {
+    if (!mounted) return;
+    if (!_useGoodsPurchasesApi(context)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '정산번호 ${pending.settlementId} 알림입니다. 실제 로그인 후 공용소비에서 정산을 확인할 수 있어요.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final t = pending.noticeType;
+    final isSupply = t == AlarmNoticeType.supplySettlementRequested ||
+        t == AlarmNoticeType.supplySettlementConfirmed;
+    final isBill = t == AlarmNoticeType.billSettlementRequested ||
+        t == AlarmNoticeType.billSettlementConfirmed;
+
+    if (!isSupply && !isBill) return;
+
+    if (mounted) {
+      setState(() => _filterIndex = isSupply ? 0 : 1);
+    }
+    _scheduleTablePageJump();
+
+    if (isSupply) {
+      await _showSupplySettlementFromAlarm(pending.settlementId);
+    } else {
+      await _showBillSettlementFromAlarm(pending.settlementId);
+    }
+  }
+
+  Future<void> _showSupplySettlementFromAlarm(int settlementId) async {
+    try {
+      final detail =
+          await _supplyService.fetchSettlementDetail(settlementId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF2A2A2A),
+          title: Text(
+            '공동 구매 정산 #${detail.settlementId}',
+            style: const TextStyle(color: Colors.white),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '총액 ${detail.totalAmount}원 · 1인 ${detail.amountPerMember}원 · '
+                  '확정 ${detail.isConfirmed ? "예" : "아니오"}',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 12),
+                ...detail.items.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '${e.itemName} · ${e.amount}원',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('닫기'),
+            ),
+            if (!detail.isConfirmed)
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    await _supplyService.confirmSettlement(settlementId);
+                    if (!mounted) return;
+                    await _loadGoodsPurchases();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('정산을 확정했습니다.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    final msg =
+                        e is ApiException ? e.message : '정산 확정에 실패했습니다.';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(msg),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                },
+                child: const Text(
+                  '정산 확정',
+                  style: TextStyle(color: Colors.amberAccent),
+                ),
+              ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is ApiException ? e.message : '정산 정보를 불러오지 못했습니다.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
+  Future<void> _showBillSettlementFromAlarm(int settlementId) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A2A),
+        title: const Text(
+          '공과금 정산 알림',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          '정산번호 $settlementId 과(와) 연결된 알림입니다.\n'
+          '아래에서 공과금 정산 화면을 열 수 있습니다.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('닫기'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showUtilityBillSettlementFlow();
+            },
+            child: const Text('공과금 정산 열기'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _attachAlarmNavigationListenerIfNeeded();
+    final useDummy = usePartitionDummyData(
+      Provider.of<AuthProvider>(context).isAuthenticated,
+    );
+    if (_sharedExpenseDummySynced == useDummy) return;
+    _sharedExpenseDummySynced = useDummy;
+    setState(() {
+      if (useDummy) {
+        _goodsExpenseItems =
+            List<SharedExpenseTableItem>.from(_dummyItemsForSharedExpenseTable(0));
+        _utilityExpenseItems =
+            List<SharedExpenseTableItem>.from(_dummyItemsForSharedExpenseTable(1));
+      } else {
+        _goodsExpenseItems = [];
+        _utilityExpenseItems = [];
+      }
+      _tableSelectionMode = false;
+      _selectedRowIndices.clear();
+      _clampTablePageIndex();
+    });
+    if (!useDummy) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _loadGoodsPurchases();
+        _loadUtilityBills();
+      });
+    }
+    _scheduleTablePageJump();
   }
 
   List<SharedExpenseTableItem> _itemsForCurrentFilter() =>
       _filterIndex == 0 ? _goodsExpenseItems : _utilityExpenseItems;
+
+  bool _useGoodsPurchasesApi(BuildContext context) {
+    return !usePartitionDummyData(
+      Provider.of<AuthProvider>(context, listen: false).isAuthenticated,
+    );
+  }
+
+  String _dateToIso(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _loadGoodsPurchases() async {
+    if (!mounted) return;
+    if (!_useGoodsPurchasesApi(context)) return;
+    setState(() => _goodsPurchasesLoading = true);
+    try {
+      final result = await _supplyService.fetchPurchases(
+        startDate: _dateToIso(_startDate),
+        endDate: _dateToIso(_endDate),
+      );
+      if (!mounted) return;
+      setState(() {
+        _goodsExpenseItems = result.purchases
+            .map((e) => e.toSharedExpenseTableItem())
+            .toList();
+        _goodsPurchasesLoading = false;
+        _clampTablePageIndex();
+      });
+      _scheduleTablePageJump();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _goodsPurchasesLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _goodsPurchasesLoading = false);
+    }
+  }
+
+  Future<void> _loadUtilityBills() async {
+    if (!mounted) return;
+    if (!_useGoodsPurchasesApi(context)) return;
+    setState(() => _utilityBillsLoading = true);
+    try {
+      final bills = await _utilityBillService.fetchBills(
+        startDate: _dateToIso(_startDate),
+        endDate: _dateToIso(_endDate),
+      );
+      if (!mounted) return;
+      setState(() {
+        _utilityExpenseItems =
+            bills.map((e) => e.toSharedExpenseTableItem()).toList();
+        _utilityBillsLoading = false;
+        _clampTablePageIndex();
+      });
+      _scheduleTablePageJump();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _utilityBillsLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _utilityBillsLoading = false);
+    }
+  }
+
+  /// 연필 모달 닫은 뒤: GET으로 맞추되, 새로 등록·수정한 행은 응답에 없으면 모달 상태를 합침 (빈 배열 필터 버그 등 대비).
+  Future<void> _syncUtilityExpenseItemsAfterManualModal(
+    List<SharedExpenseTableItem> modalItems,
+  ) async {
+    if (!mounted || !_useGoodsPurchasesApi(context)) return;
+    await _loadUtilityBills();
+    if (!mounted) return;
+    final serverIds =
+        _utilityExpenseItems.map((e) => e.billId).whereType<int>().where((id) => id > 0).toSet();
+    final missingFromGet =
+        modalItems.where((e) => e.billId != null && e.billId! > 0 && !serverIds.contains(e.billId!)).toList();
+    if (missingFromGet.isEmpty) return;
+    setState(() {
+      _utilityExpenseItems = [...missingFromGet, ..._utilityExpenseItems];
+      _clampTablePageIndex();
+    });
+    _scheduleTablePageJump();
+  }
 
   void _clampTablePageIndex() {
     final pages = _paginateSharedExpenseItems(
@@ -105,23 +434,45 @@ class _PartitionSharedExpenseScreenState
     });
   }
 
-  void _showManualSharedExpenseModal() {
+  void _showManualSharedExpenseModal({
+    int? initialEditIndex,
+    bool addOnlyEntry = false,
+  }) {
+    final goodsFromApi =
+        _filterIndex == 0 && _useGoodsPurchasesApi(context);
+    final utilityFromApi =
+        _filterIndex == 1 && _useGoodsPurchasesApi(context);
     showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (ctx) => SharedExpenseManualModal(
         isUtility: _filterIndex == 1,
-        initialItems: List<SharedExpenseTableItem>.from(_itemsForCurrentFilter()),
+        deletePurchasesViaApi: goodsFromApi,
+        submitUtilityViaApi: utilityFromApi,
+        /// 서버(공용소비) 물품도 표와 동일 목록을 넣어 [purchaseId]로 PATCH 수정 가능
+        initialItems: List<SharedExpenseTableItem>.from(
+          _itemsForCurrentFilter(),
+        ),
+        initialOpenEditIndex: initialEditIndex,
+        addOnlyEntry: addOnlyEntry,
         onApply: (next) {
-          setState(() {
-            if (_filterIndex == 0) {
-              _goodsExpenseItems = next;
-            } else {
-              _utilityExpenseItems = next;
-            }
-            _clampTablePageIndex();
-          });
-          _scheduleTablePageJump();
+          if (goodsFromApi) {
+            _loadGoodsPurchases();
+          } else if (utilityFromApi) {
+            Future<void>.microtask(
+              () => _syncUtilityExpenseItemsAfterManualModal(next),
+            );
+          } else {
+            setState(() {
+              if (_filterIndex == 0) {
+                _goodsExpenseItems = next;
+              } else {
+                _utilityExpenseItems = next;
+              }
+              _clampTablePageIndex();
+            });
+            _scheduleTablePageJump();
+          }
         },
       ),
     ).then((applied) {
@@ -140,6 +491,89 @@ class _PartitionSharedExpenseScreenState
     });
   }
 
+  /// 공동 구매 정산: 멤버 알림 동의 후 POST → PATCH 완료까지 진행.
+  Future<bool?> _confirmSettlementNotifyDialog() async {
+    return showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A32),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          '정산 알림',
+          style: TextStyle(
+            color: Colors.white,
+            fontFamily: 'Pretendard Variable',
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        content: const Text(
+          '다른 멤버에게 정산 알림을 보낼까요?\n'
+          '「예, 보내기」를 누르면 정산 처리가 진행되며 멤버에게 안내될 수 있어요.',
+          style: TextStyle(
+            color: Colors.white70,
+            height: 1.35,
+            fontFamily: 'Pretendard Variable',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: Text(
+              '아니요',
+              style: TextStyle(color: Colors.white.withOpacity(0.85)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text(
+              '예, 보내기',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _executeGoodsSettlementPostAndConfirm({
+    required List<int> purchaseIds,
+  }) async {
+    final members = await _authService.fetchHouseholdMembers();
+    final memberIds = members.map((e) => e.userId).toList();
+    if (memberIds.isEmpty) {
+      throw ApiException(
+        message:
+            '정산에 포함할 멤버를 찾지 못했어요. 로그인·그룹 상태를 확인해 주세요.',
+      );
+    }
+    final req = await _supplyService.requestSettlement(
+      purchaseIds: purchaseIds,
+      memberIds: memberIds,
+    );
+    await _supplyService.confirmSettlement(req.settlementId);
+    try {
+      final detail =
+          await _supplyService.fetchSettlementDetail(req.settlementId);
+      if (!detail.isConfirmed && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '정산은 접수되었지만 완료 확인이 되지 않았어요. 잠시 후 목록을 새로고침해 주세요.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {
+      // POST/PATCH 성공 후 상세 조회만 실패한 경우 무시
+    }
+  }
+
   void _showItemDetailSheet(SharedExpenseTableItem item, int globalIndex) {
     showModalBottomSheet<void>(
       context: context,
@@ -147,9 +581,61 @@ class _PartitionSharedExpenseScreenState
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withOpacity(0.35),
       builder: (ctx) => SharedExpenseItemDetailSheet(
+        key: ValueKey(
+          '${item.purchaseId ?? item.billId ?? 'local'}_${globalIndex}_${item.manuallySettled}',
+        ),
         item: item,
         isUtility: _filterIndex == 1,
-        onSettlementChanged: (v) {
+        onSettlementChanged: (v) async {
+          final goodsApi =
+              _filterIndex == 0 && _useGoodsPurchasesApi(context);
+          final pid = item.purchaseId;
+          if (goodsApi && pid != null && pid > 0) {
+            if (!v) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      '서버에 반영된 정산은 이 화면에서 되돌릴 수 없어요.',
+                    ),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+              throw Exception('unsettle-not-supported');
+            }
+            final agreed = await _confirmSettlementNotifyDialog();
+            if (agreed != true) {
+              throw Exception('cancel');
+            }
+            try {
+              await _executeGoodsSettlementPostAndConfirm(
+                purchaseIds: [pid],
+              );
+            } on ApiException catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(e.message),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+              rethrow;
+            }
+            if (mounted) {
+              Navigator.of(ctx).pop();
+              _loadGoodsPurchases();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('정산 처리했어요.'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+            return;
+          }
+          if (!mounted) return;
           setState(() {
             final list =
                 List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
@@ -164,56 +650,54 @@ class _PartitionSharedExpenseScreenState
             }
           });
         },
+        onEditRequested: () => _showManualSharedExpenseModal(
+              initialEditIndex: globalIndex,
+            ),
+        onDeleteRequested: () => _deleteRowsAtIndices({globalIndex}),
       ),
     );
   }
 
-  void _showUtilityBillAddModal() {
-    showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      builder: (ctx) => UtilityBillAddModal(
-        existingItemNames: _utilityExpenseItems.map((e) => e.name).toSet(),
-        onConfirm: (added) {
-          setState(() {
-            _utilityExpenseItems = [..._utilityExpenseItems, ...added];
-            _clampTablePageIndex();
-          });
-          _scheduleTablePageJump();
-        },
-      ),
-    ).then((ok) {
-      if (ok == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('공과금을 표에 추가했어요.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    });
-  }
-
   @override
   void dispose() {
+    if (_alarmListenerAttached) {
+      _alarmNav?.removeListener(_onAlarmNavigationFromController);
+    }
     _tablePageController.dispose();
     super.dispose();
+  }
+
+  /// 핫 리로드 후에도 API 목록·정산 여부가 다시 반영되도록 (State 유지 시 didChangeDependencies는 조기 return)
+  @override
+  void reassemble() {
+    super.reassemble();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_useGoodsPurchasesApi(context)) {
+        _loadGoodsPurchases();
+        _loadUtilityBills();
+      }
+    });
   }
 
   Future<void> _selectDate(bool isStartDate) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    // 과거 구매·납부 내역 조회 가능 (수동 등록 모달과 동일한 하한)
+    final firstDate = DateTime(today.year - 20, 1, 1);
     final maxDate = today.add(const Duration(days: 365)); // 1년 후까지
 
     final selectedDate = isStartDate ? _startDate : _endDate;
-    final initialDate = selectedDate.isBefore(today) ? today : selectedDate;
+    var initialDate = selectedDate;
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
+    if (initialDate.isAfter(maxDate)) initialDate = maxDate;
 
     final DateTime? picked = await showDialog<DateTime>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => GlassmorphicDatePicker(
         initialDate: initialDate,
-        firstDate: today,
+        firstDate: firstDate,
         lastDate: maxDate,
         isStartDate: isStartDate,
       ),
@@ -236,6 +720,10 @@ class _PartitionSharedExpenseScreenState
           }
         }
       });
+      if (mounted && _useGoodsPurchasesApi(context)) {
+        _loadGoodsPurchases();
+        _loadUtilityBills();
+      }
     }
   }
 
@@ -252,12 +740,12 @@ class _PartitionSharedExpenseScreenState
     const settlementButtonBlock = _spacingMedium + 46.0;
     const beforeTable = _spacingLarge;
     // 표 패널 + 페이지 컨트롤 + 표 바깥(오른쪽) 추가·수정 원형 줄
-    const tablePanel = 16.0 +
+    const tablePanel = 6.0 +
         8.0 +
         44.0 +
         8.0 +
         _tablePageViewHeightFixed +
-        4.0 +
+        8.0 +
         36.0 +
         12.0 +
         32.0;
@@ -320,6 +808,10 @@ class _PartitionSharedExpenseScreenState
                   : 0.0;
               final symmetricPad =
                   symmetricPadFull * _chipVerticalSpacingScale;
+              final chipOuterGap = math.max(
+                _chipOuterVerticalMinGap,
+                symmetricPad + 3,
+              );
 
               return ListView(
                 physics: const BouncingScrollPhysics(
@@ -333,9 +825,9 @@ class _PartitionSharedExpenseScreenState
                   scrollBottomPadding,
                 ),
                 children: [
-                  SizedBox(height: symmetricPad + 3),
+                  SizedBox(height: chipOuterGap),
                   _buildFilterChips(),
-                  SizedBox(height: symmetricPad + 3),
+                  SizedBox(height: chipOuterGap),
                   _buildMainCard(),
                   const SizedBox(height: _spacingSmall),
                   ..._buildActionButtons(),
@@ -433,6 +925,9 @@ class _PartitionSharedExpenseScreenState
                 _tableSelectionMode = false;
                 _selectedRowIndices.clear();
               });
+              if (_useGoodsPurchasesApi(context)) {
+                _loadGoodsPurchases();
+              }
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
                 if (_tablePageController.hasClients) {
@@ -456,6 +951,9 @@ class _PartitionSharedExpenseScreenState
                 _tableSelectionMode = false;
                 _selectedRowIndices.clear();
               });
+              if (_useGoodsPurchasesApi(context)) {
+                _loadUtilityBills();
+              }
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 if (!mounted) return;
                 if (_tablePageController.hasClients) {
@@ -524,7 +1022,7 @@ class _PartitionSharedExpenseScreenState
           ] else ...[
             const SizedBox(height: _spacingMedium),
             PrimaryButton(
-              label: '공용 소비 물품 정산하기',
+              label: '공용 구매 물품 정산 요청',
               enabled: !_tableSelectionMode,
               onPressed: _showSharedExpenseSettlementFlow,
             ),
@@ -533,7 +1031,8 @@ class _PartitionSharedExpenseScreenState
           FrostedPanel(
             borderRadius: BorderRadius.circular(20),
             backgroundOpacity: 0.0,
-            padding: const EdgeInsets.fromLTRB(6, 16, 6, 8),
+            // 좌우(6)와 동일하게 상단 인셋 축소 — 레이블~테두리 간격 통일
+            padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -542,30 +1041,63 @@ class _PartitionSharedExpenseScreenState
                 const SizedBox(height: 8),
                 SizedBox(
                   height: _tablePageViewHeight,
-                  child: PageView.builder(
-                    controller: _tablePageController,
-                    physics: const PageScrollPhysics(
-                      parent: ClampingScrollPhysics(),
-                    ),
-                    onPageChanged: (i) {
-                      setState(() => _tablePageIndex = i);
-                    },
-                    itemCount: tablePages.length,
-                    itemBuilder: (context, pageIndex) {
-                      return _SharedExpenseTableBody(
-                        filterIndex: _filterIndex,
-                        items: tablePages[pageIndex],
-                        onNameTap: _showItemDetailSheet,
-                        selectionMode: _tableSelectionMode,
-                        pageIndex: pageIndex,
-                        itemsPerPage: _tableItemsPerPage,
-                        selectedIndices: _selectedRowIndices,
-                        onToggleRow: _toggleRowSelection,
-                      );
-                    },
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PageView.builder(
+                        controller: _tablePageController,
+                        physics: const PageScrollPhysics(
+                          parent: ClampingScrollPhysics(),
+                        ),
+                        onPageChanged: (i) {
+                          setState(() => _tablePageIndex = i);
+                        },
+                        itemCount: tablePages.length,
+                        itemBuilder: (context, pageIndex) {
+                          final pageItems = tablePages[pageIndex];
+                          // 정산 여부·행 구성이 바뀌면 PageView 자식이 확실히 갱신되도록
+                          final pageKey = pageItems.isEmpty
+                              ? 'p$pageIndex'
+                              : pageItems
+                                  .map(
+                                    (e) =>
+                                        '${e.purchaseId ?? e.billId ?? e.name.hashCode}_${e.manuallySettled}',
+                                  )
+                                  .join('|');
+                          return _SharedExpenseTableBody(
+                            key: ValueKey(pageKey),
+                            filterIndex: _filterIndex,
+                            items: pageItems,
+                            onNameTap: _showItemDetailSheet,
+                            selectionMode: _tableSelectionMode,
+                            pageIndex: pageIndex,
+                            itemsPerPage: _tableItemsPerPage,
+                            rowSlotHeight: _tablePageViewHeight /
+                                _tableItemsPerPage,
+                            selectedIndices: _selectedRowIndices,
+                            onToggleRow: _toggleRowSelection,
+                          );
+                        },
+                      ),
+                      if (((!isUtility && _goodsPurchasesLoading) ||
+                              (isUtility && _utilityBillsLoading)) &&
+                          _useGoodsPurchasesApi(context))
+                        Container(
+                          color: Colors.black.withOpacity(0.25),
+                          alignment: Alignment.center,
+                          child: const SizedBox(
+                            width: 26,
+                            height: 26,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 _buildPageControl(
                   pageCount: tablePages.length,
                   currentIndex: tablePageIndexSafe,
@@ -573,7 +1105,7 @@ class _PartitionSharedExpenseScreenState
               ],
             ),
           ),
-          // 표 아래: 왼쪽 = 선택 모드 진입·종료, 오른쪽 = 편집 또는 전체선택·삭제·정산 표시
+          // 표 아래: 왼쪽 = 선택 모드 진입·종료, 오른쪽 = `+`(직접 추가) 또는 전체선택·삭제·정산 표시
           // 가로 패딩은 표 FrostedPanel(6)과 같게 — 오른쪽 끝 버튼이 표 수량 열과 세로 정렬
           const SizedBox(height: 12),
           Padding(
@@ -595,15 +1127,7 @@ class _PartitionSharedExpenseScreenState
                   ),
                 ),
                 const Spacer(),
-                if (!_tableSelectionMode)
-                  Tooltip(
-                    message: isUtility ? '공과금 내역 관리' : '공용 소비 내역 관리',
-                    child: _buildCircleArrow(
-                      Icons.edit_rounded,
-                      onTap: _showManualSharedExpenseModal,
-                    ),
-                  )
-                else
+                if (_tableSelectionMode)
                   Expanded(
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
@@ -624,14 +1148,25 @@ class _PartitionSharedExpenseScreenState
                           const SizedBox(width: 6),
                           _buildSelectionActionChip(
                             selectionAllSettled
-                                ? '정산 해제하기'
-                                : '정산 표시하기',
+                                ? '정산 해제'
+                                : '정산 완료',
                             selectionAllSettled
                                 ? _cancelSettlementSelectedRows
                                 : _settleSelectedRows,
                           ),
                         ],
                       ),
+                    ),
+                  )
+                else
+                  Tooltip(
+                    message:
+                        isUtility ? '공과금 직접 추가' : '소비 내역 직접 추가',
+                    child: _buildCircleArrow(
+                      Icons.add_rounded,
+                      onTap: () => _showManualSharedExpenseModal(
+                            addOnlyEntry: true,
+                          ),
                     ),
                   ),
               ],
@@ -646,12 +1181,7 @@ class _PartitionSharedExpenseScreenState
     final isUtility = _filterIndex == 1;
     
     if (isUtility) {
-      return [
-        PrimaryButton(
-          label: '공과금 추가하기',
-          onPressed: _showUtilityBillAddModal,
-        ),
-      ];
+      return [];
     } else {
       return [
         PrimaryButton(
@@ -759,6 +1289,8 @@ class _PartitionSharedExpenseScreenState
 
     final isUtility = _filterIndex == 1;
     final lastHeaderLabel = isUtility ? '비고' : '수량';
+    final dateHeaderLabel = isUtility ? '납부일' : '날짜';
+    final amountHeaderLabel = isUtility ? '납부액' : '금액';
     // 공과금: 항목명 짧음·비고 넓음. 물품: 내용 폭 축소·날짜(YY.MM.DD.) 폭 확대
     const contentFlex = 4;
     final dateFlex = isUtility ? 2 : 3;
@@ -818,11 +1350,11 @@ class _PartitionSharedExpenseScreenState
                 borderRadius: BorderRadius.circular(20),
                 backgroundOpacity: 0.4,
                 padding: const EdgeInsets.symmetric(horizontal: padDate, vertical: 6),
-                child: const Padding(
-                  padding: EdgeInsets.only(top: 2),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
                   child: Center(
                     child: Text(
-                      '날짜',
+                      dateHeaderLabel,
                       style: headerStyle,
                       textAlign: TextAlign.center,
                     ),
@@ -840,11 +1372,11 @@ class _PartitionSharedExpenseScreenState
                 borderRadius: BorderRadius.circular(20),
                 backgroundOpacity: 0.4,
                 padding: const EdgeInsets.symmetric(horizontal: padAmount, vertical: 6),
-                child: const Padding(
-                  padding: EdgeInsets.only(top: 2),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
                   child: Center(
                     child: Text(
-                      '금액',
+                      amountHeaderLabel,
                       style: headerStyle,
                       textAlign: TextAlign.center,
                     ),
@@ -1065,7 +1597,12 @@ class _PartitionSharedExpenseScreenState
       );
       return;
     }
-    final count = _selectedRowIndices.length;
+    await _deleteRowsAtIndices(Set<int>.from(_selectedRowIndices));
+  }
+
+  Future<void> _deleteRowsAtIndices(Set<int> indices) async {
+    if (indices.isEmpty) return;
+    final count = indices.length;
     final ok = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
@@ -1089,9 +1626,106 @@ class _PartitionSharedExpenseScreenState
       ),
     );
     if (ok != true || !mounted) return;
+
+    final goodsApi = _filterIndex == 0 && _useGoodsPurchasesApi(context);
+    if (goodsApi) {
+      final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
+      final sorted = indices.toList()
+        ..sort((a, b) => b.compareTo(a));
+      final ids = <int>[];
+      for (final i in sorted) {
+        if (i < 0 || i >= list.length) continue;
+        final pid = list[i].purchaseId;
+        if (pid == null || pid <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('서버에 등록된 구매만 삭제할 수 있어요.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        ids.add(pid);
+      }
+      try {
+        for (final pid in ids) {
+          await _supplyService.deletePurchase(pid);
+        }
+        if (!mounted) return;
+        setState(() {
+          _selectedRowIndices.clear();
+          _clampTablePageIndex();
+        });
+        _scheduleTablePageJump();
+        _loadGoodsPurchases();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('선택한 $count개 항목을 삭제했어요.')),
+        );
+      } on ApiException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          _loadGoodsPurchases();
+        }
+      }
+      return;
+    }
+
+    final billsApi = _filterIndex == 1 && _useGoodsPurchasesApi(context);
+    if (billsApi) {
+      final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
+      final sorted = indices.toList()
+        ..sort((a, b) => b.compareTo(a));
+      final billIds = <int>[];
+      for (final i in sorted) {
+        if (i < 0 || i >= list.length) continue;
+        final bid = list[i].billId;
+        if (bid == null || bid <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('서버에 등록된 공과금만 삭제할 수 있어요.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        billIds.add(bid);
+      }
+      try {
+        for (final bid in billIds) {
+          await _utilityBillService.deleteBill(bid);
+        }
+        if (!mounted) return;
+        setState(() {
+          _selectedRowIndices.clear();
+          _clampTablePageIndex();
+        });
+        _scheduleTablePageJump();
+        await _loadUtilityBills();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('선택한 $count개 항목을 삭제했어요.')),
+        );
+      } on ApiException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          await _loadUtilityBills();
+        }
+      }
+      return;
+    }
+
     setState(() {
       final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
-      final sorted = _selectedRowIndices.toList()
+      final sorted = indices.toList()
         ..sort((a, b) => b.compareTo(a));
       for (final i in sorted) {
         if (i >= 0 && i < list.length) list.removeAt(i);
@@ -1123,7 +1757,7 @@ class _PartitionSharedExpenseScreenState
     return true;
   }
 
-  void _settleSelectedRows() {
+  Future<void> _settleSelectedRows() async {
     if (_selectedRowIndices.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('먼저 항목을 선택해주세요.')),
@@ -1131,8 +1765,53 @@ class _PartitionSharedExpenseScreenState
       return;
     }
     final count = _selectedRowIndices.length;
+    final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
+    final goodsApi = _filterIndex == 0 && _useGoodsPurchasesApi(context);
+
+    if (goodsApi) {
+      final ids = <int>[];
+      for (final i in _selectedRowIndices) {
+        if (i < 0 || i >= list.length) continue;
+        final id = list[i].purchaseId;
+        if (id == null || id <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('서버에 등록된 구매만 정산할 수 있어요.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        ids.add(id);
+      }
+      final agreed = await _confirmSettlementNotifyDialog();
+      if (agreed != true || !mounted) return;
+      try {
+        await _executeGoodsSettlementPostAndConfirm(purchaseIds: ids);
+        if (!mounted) return;
+        setState(() => _selectedRowIndices.clear());
+        _loadGoodsPurchases();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('선택한 $count개 항목 정산을 완료했어요.'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } on ApiException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+      return;
+    }
+
     setState(() {
-      final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
       for (final i in _selectedRowIndices) {
         if (i >= 0 && i < list.length) {
           list[i] = list[i].copyWith(manuallySettled: true);
@@ -1153,7 +1832,7 @@ class _PartitionSharedExpenseScreenState
     );
   }
 
-  void _cancelSettlementSelectedRows() {
+  Future<void> _cancelSettlementSelectedRows() async {
     if (_selectedRowIndices.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('먼저 항목을 선택해주세요.')),
@@ -1161,8 +1840,22 @@ class _PartitionSharedExpenseScreenState
       return;
     }
     final count = _selectedRowIndices.length;
+    final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
+    final goodsApi = _filterIndex == 0 && _useGoodsPurchasesApi(context);
+
+    if (goodsApi) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '정산 요청·완료는 「공용 구매 물품 정산 요청」 플로우에서 처리해 주세요.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     setState(() {
-      final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
       for (final i in _selectedRowIndices) {
         if (i >= 0 && i < list.length) {
           list[i] = list[i].copyWith(manuallySettled: false);
@@ -1183,34 +1876,55 @@ class _PartitionSharedExpenseScreenState
     );
   }
 
-  /// AI 영수증 인식 — 촬영(가상) → 분석 확인 → 추출 내용 (카메라 연동 전 더미 플로우)
+  /// AI 영수증 인식 — 카메라/앨범 → 이미지 분석 API → 품목 편집·등록
   Future<void> _showAiReceiptRecognitionFlow() async {
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => const _AiReceiptRecognitionFlowDialog(),
+      builder: (context) => _AiReceiptRecognitionFlowDialog(
+        onPurchasesRegistered: () {
+          if (_useGoodsPurchasesApi(context)) {
+            _loadGoodsPurchases();
+          }
+        },
+      ),
     );
   }
 
-  /// 공용 소비 물품 정산 — 항목 선택 → 정산할 인원 선택 (더미)
+  /// 공용 구매 물품 정산 요청 — 정산 목록 GET + 인원(로컬 UI). 일괄 반영은 표 선택 모드
   Future<void> _showSharedExpenseSettlementFlow() async {
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => const _SharedExpenseSettlementFlowDialog(),
+      builder: (context) => _SharedExpenseSettlementFlowDialog(
+        initialRangeStart: _startDate,
+        initialRangeEnd: _endDate,
+        loadFromSettlementApi: _useGoodsPurchasesApi(context),
+        onFinished: () {
+          if (!mounted) return;
+          if (_useGoodsPurchasesApi(context)) {
+            _loadGoodsPurchases();
+          }
+        },
+      ),
     );
   }
 
   /// 공과금 정산 — 기간·항목 선택(페이지) → 1인당 금액
   Future<void> _showUtilityBillSettlementFlow() async {
+    final api = _useGoodsPurchasesApi(context);
     await showDialog<void>(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => _UtilityBillSettlementFlowDialog(
-        items: List<SharedExpenseTableItem>.from(_utilityExpenseItems),
+        fallbackItems:
+            List<SharedExpenseTableItem>.from(_utilityExpenseItems),
+        fetchSettlementListViaApi: api,
+        initialRangeStart: _startDate,
+        initialRangeEnd: _endDate,
       ),
     );
   }
@@ -1231,16 +1945,20 @@ class _SharedExpenseTableBody extends StatelessWidget {
   final bool selectionMode;
   final int pageIndex;
   final int itemsPerPage;
+  /// 한 페이지당 행 슬롯 높이 (`PageView` 높이 / `itemsPerPage`)
+  final double rowSlotHeight;
   final Set<int> selectedIndices;
   final ValueChanged<int> onToggleRow;
 
   const _SharedExpenseTableBody({
+    super.key,
     required this.filterIndex,
     required this.items,
     required this.onNameTap,
     required this.selectionMode,
     required this.pageIndex,
     required this.itemsPerPage,
+    required this.rowSlotHeight,
     required this.selectedIndices,
     required this.onToggleRow,
   });
@@ -1263,14 +1981,21 @@ class _SharedExpenseTableBody extends StatelessWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        for (var index = 0; index < items.length; index++)
-          _buildItemRow(
-            context,
-            isUtility,
-            items[index],
-            pageIndex * itemsPerPage + index,
+        for (var i = 0; i < itemsPerPage; i++)
+          SizedBox(
+            height: rowSlotHeight,
+            child: i < items.length
+                ? Align(
+                    alignment: Alignment.center,
+                    child: _buildItemRow(
+                      context,
+                      isUtility,
+                      items[i],
+                      pageIndex * itemsPerPage + i,
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ),
       ],
     );
@@ -1499,14 +2224,16 @@ List<SharedExpenseTableItem> _dummyItemsForSharedExpenseTable(int filterIndex) {
         name: '콘푸라이트 500g',
         date: '25.05.04.',
         amount: '5,980원',
-        quantity: '3개'),
+        quantity: '3개',
+        manuallySettled: true),
     const SharedExpenseTableItem(
         name: '두루마리 휴지',
         date: '25.05.05.',
         amount: '8,000원',
         quantity: '3개',
         majorCategory: '욕실용품',
-        minorCategory: '휴지'),
+        minorCategory: '휴지',
+        manuallySettled: false),
     const SharedExpenseTableItem(
         name: '10W 충전기',
         date: '25.05.14.',
@@ -1726,18 +2453,32 @@ Widget _buildSettlementMemberAmountTrailing({
 class _SettlementSelectableLine {
   final String name;
   final int amountWon;
+  final int? purchaseId;
+  final String? statusLabel;
   bool selected;
 
   _SettlementSelectableLine({
     required this.name,
     this.amountWon = 0,
+    this.purchaseId,
+    this.statusLabel,
     this.selected = true,
   });
 }
 
-/// 공용 소비 물품 정산: 기간·항목 선택 → 정산할 인원 선택 → 완료 모달
+/// 공용 구매 물품 정산 요청: 기간·항목(GET 정산 목록) → 인원 → 정산 요청(POST) → 완료(PATCH)
 class _SharedExpenseSettlementFlowDialog extends StatefulWidget {
-  const _SharedExpenseSettlementFlowDialog();
+  const _SharedExpenseSettlementFlowDialog({
+    required this.initialRangeStart,
+    required this.initialRangeEnd,
+    required this.loadFromSettlementApi,
+    this.onFinished,
+  });
+
+  final DateTime initialRangeStart;
+  final DateTime initialRangeEnd;
+  final bool loadFromSettlementApi;
+  final VoidCallback? onFinished;
 
   @override
   State<_SharedExpenseSettlementFlowDialog> createState() =>
@@ -1746,31 +2487,97 @@ class _SharedExpenseSettlementFlowDialog extends StatefulWidget {
 
 class _SharedExpenseSettlementFlowDialogState
     extends State<_SharedExpenseSettlementFlowDialog> {
-  /// 0: 항목 선택, 1: 정산할 인원
+  /// 0: 항목 선택, 1: 정산할 인원, 2: 요청 결과·정산 완료 처리
   int _step = 0;
 
   late DateTime _rangeStart;
   late DateTime _rangeEnd;
-  late final List<_SettlementSelectableLine> _lines;
+  List<_SettlementSelectableLine> _lines = [];
 
-  List<String> _memberNames = [];
+  bool _loadingSettlement = false;
+  String? _settlementLoadError;
+
+  List<HouseholdMemberBrief> _members = [];
   List<bool> _memberSelected = [];
   final List<TextEditingController> _memberAmountCtrls = [];
   bool _loadingMembers = true;
 
+  SupplySettlementRequestResult? _requestResult;
+  bool _submittingSettlementRequest = false;
+  bool _confirmingSettlement = false;
+
   final AuthService _authService = AuthService();
+  final SupplyService _supplyService = SupplyService();
+
+  String _toIsoDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   @override
   void initState() {
     super.initState();
-    _rangeStart = DateTime(2025, 8, 15);
-    _rangeEnd = DateTime(2025, 8, 15);
-    _lines = [
-      _SettlementSelectableLine(name: '콘프로스트', amountWon: 12000),
-      _SettlementSelectableLine(name: '생과일요거트', amountWon: 8000),
-      _SettlementSelectableLine(name: '멀티탭', amountWon: 6000),
-    ];
+    _rangeStart = DateTime(
+      widget.initialRangeStart.year,
+      widget.initialRangeStart.month,
+      widget.initialRangeStart.day,
+    );
+    _rangeEnd = DateTime(
+      widget.initialRangeEnd.year,
+      widget.initialRangeEnd.month,
+      widget.initialRangeEnd.day,
+    );
+    if (widget.loadFromSettlementApi) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadSettlementPurchases();
+      });
+    }
     _loadMembers();
+  }
+
+  Future<void> _loadSettlementPurchases() async {
+    if (!widget.loadFromSettlementApi || !mounted) return;
+    setState(() {
+      _loadingSettlement = true;
+      _settlementLoadError = null;
+    });
+    try {
+      final result = await _supplyService.fetchSettlementPurchases(
+        startDate: _toIsoDate(_rangeStart),
+        endDate: _toIsoDate(_rangeEnd),
+      );
+      if (!mounted) return;
+      setState(() {
+        _lines = result.purchases.map((e) {
+          final row = e.toSharedExpenseTableItem();
+          return _SettlementSelectableLine(
+            name: row.displayLabel,
+            amountWon: e.amount,
+            purchaseId: e.purchaseId,
+            statusLabel: e.status?.trim().isNotEmpty == true
+                ? e.status
+                : null,
+            selected: true,
+          );
+        }).toList();
+        _loadingSettlement = false;
+        _settlementLoadError = null;
+      });
+    } on ApiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _lines = [];
+          _loadingSettlement = false;
+          _settlementLoadError = e.message;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _lines = [];
+          _loadingSettlement = false;
+          _settlementLoadError = '정산 대상 목록을 불러오지 못했습니다.';
+        });
+      }
+    }
   }
 
   @override
@@ -1782,10 +2589,10 @@ class _SharedExpenseSettlementFlowDialogState
   }
 
   void _ensureMemberAmountControllers() {
-    while (_memberAmountCtrls.length < _memberNames.length) {
+    while (_memberAmountCtrls.length < _members.length) {
       _memberAmountCtrls.add(TextEditingController());
     }
-    while (_memberAmountCtrls.length > _memberNames.length) {
+    while (_memberAmountCtrls.length > _members.length) {
       _memberAmountCtrls.removeLast().dispose();
     }
   }
@@ -1793,7 +2600,7 @@ class _SharedExpenseSettlementFlowDialogState
   void _syncMemberAmountFields() {
     _ensureMemberAmountControllers();
     final per = _getGoodsPerPersonWon();
-    for (var i = 0; i < _memberNames.length; i++) {
+    for (var i = 0; i < _members.length; i++) {
       if (_memberSelected[i]) {
         _memberAmountCtrls[i].text = per > 0 ? '$per' : '0';
       } else {
@@ -1803,11 +2610,11 @@ class _SharedExpenseSettlementFlowDialogState
   }
 
   Future<void> _loadMembers() async {
-    final names = await _authService.fetchHouseholdMemberNames();
+    final list = await _authService.fetchHouseholdMembers();
     if (!mounted) return;
     setState(() {
-      _memberNames = names;
-      _memberSelected = List<bool>.filled(names.length, true);
+      _members = list;
+      _memberSelected = List<bool>.filled(list.length, list.isNotEmpty);
       _loadingMembers = false;
       _ensureMemberAmountControllers();
       _syncMemberAmountFields();
@@ -1844,16 +2651,19 @@ class _SharedExpenseSettlementFlowDialogState
   Future<void> _pickDate(bool isStart) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final firstDate = DateTime(today.year - 20, 1, 1);
     final maxDate = today.add(const Duration(days: 365));
     final selected = isStart ? _rangeStart : _rangeEnd;
-    final initialDate = selected.isBefore(today) ? today : selected;
+    var initialDate = selected;
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
+    if (initialDate.isAfter(maxDate)) initialDate = maxDate;
 
     final DateTime? picked = await showDialog<DateTime>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => GlassmorphicDatePicker(
         initialDate: initialDate,
-        firstDate: today,
+        firstDate: firstDate,
         lastDate: maxDate,
         isStartDate: isStart,
       ),
@@ -1874,6 +2684,9 @@ class _SharedExpenseSettlementFlowDialogState
           }
         }
       });
+      if (widget.loadFromSettlementApi) {
+        _loadSettlementPurchases();
+      }
     }
   }
 
@@ -1899,15 +2712,18 @@ class _SharedExpenseSettlementFlowDialogState
               ),
               const SizedBox(width: 6),
               Flexible(
-                child: Text(
-                  _formatDate(date),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'Pretendard Variable',
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _formatDate(date),
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Pretendard Variable',
+                    ),
                   ),
                 ),
               ),
@@ -1929,6 +2745,7 @@ class _SharedExpenseSettlementFlowDialogState
           backgroundOpacity: 0.08,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
                 line.selected
@@ -1941,14 +2758,39 @@ class _SharedExpenseSettlementFlowDialogState
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  line.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    fontFamily: 'Pretendard Variable',
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      line.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                    if (line.amountWon > 0 ||
+                        (line.statusLabel != null &&
+                            line.statusLabel!.isNotEmpty)) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          if (line.amountWon > 0)
+                            '${_formatKrwSettlement(line.amountWon)}원',
+                          if (line.statusLabel != null &&
+                              line.statusLabel!.isNotEmpty)
+                            line.statusLabel!,
+                        ].join(' · '),
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.72),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          fontFamily: 'Pretendard Variable',
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
@@ -1972,7 +2814,7 @@ class _SharedExpenseSettlementFlowDialogState
                 const SizedBox(width: 40),
                 const Expanded(
                   child: Text(
-                    '공용 소비 물품 정산',
+                    '공용 구매 물품 정산 요청',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.white,
@@ -2028,7 +2870,76 @@ class _SharedExpenseSettlementFlowDialogState
               ],
             ),
             const SizedBox(height: 18),
-            ..._lines.map(_buildItemRow),
+            if (widget.loadFromSettlementApi && _loadingSettlement)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(
+                  child: SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Colors.white70),
+                    ),
+                  ),
+                ),
+              )
+            else if (widget.loadFromSettlementApi &&
+                _settlementLoadError != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      _settlementLoadError!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.85),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'Pretendard Variable',
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: TextButton(
+                        onPressed: _loadingSettlement
+                            ? null
+                            : () => _loadSettlementPurchases(),
+                        child: const Text(
+                          '다시 시도',
+                          style: TextStyle(
+                            fontFamily: 'Pretendard Variable',
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (_lines.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  widget.loadFromSettlementApi
+                      ? '이 기간에 정산할 물품이 없어요.\n기간을 바꿔 보세요.'
+                      : '로그인 후 이 기간의 미정산 구매 내역을 불러올 수 있어요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Pretendard Variable',
+                    height: 1.4,
+                  ),
+                ),
+              )
+            else
+              ..._lines.map(_buildItemRow),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -2086,11 +2997,26 @@ class _SharedExpenseSettlementFlowDialogState
             const SizedBox(height: 20),
             PrimaryButton(
               label: '다음',
+              enabled: !widget.loadFromSettlementApi ||
+                  (!_loadingSettlement && _settlementLoadError == null),
               onPressed: () {
-                if (!_lines.any((e) => e.selected)) {
+                if (_lines.isEmpty || !_lines.any((e) => e.selected)) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('정산할 물품을 하나 이상 선택해주세요.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+                if (widget.loadFromSettlementApi &&
+                    !_loadingMembers &&
+                    _members.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        '하우스 멤버를 불러오지 못했어요. 네트워크·로그인 상태를 확인해 주세요.',
+                      ),
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
@@ -2109,7 +3035,7 @@ class _SharedExpenseSettlementFlowDialogState
   }
 
   Widget _buildMemberRow(BuildContext context, int index) {
-    final name = _memberNames[index];
+    final name = _members[index].name;
     final sel = _memberSelected[index];
     final maxNameW = (MediaQuery.sizeOf(context).width - 32) * 0.38;
     return Padding(
@@ -2181,7 +3107,9 @@ class _SharedExpenseSettlementFlowDialogState
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 IconButton(
-                  onPressed: () => setState(() => _step = 0),
+                  onPressed: _submittingSettlementRequest
+                      ? null
+                      : () => setState(() => _step = 0),
                   icon: Icon(
                     Icons.arrow_back_ios_new_rounded,
                     color: Colors.white.withOpacity(0.9),
@@ -2244,6 +3172,21 @@ class _SharedExpenseSettlementFlowDialogState
                   ),
                 ),
               )
+            else if (widget.loadFromSettlementApi && _members.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  '하우스 멤버를 불러오지 못했어요.\n로그인·네트워크를 확인해 주세요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.65),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Pretendard Variable',
+                    height: 1.4,
+                  ),
+                ),
+              )
             else ...[
               Text(
                 '선택 물품 합계: ${_formatKrwSettlement(total)}원 · 1인당: ${_formatKrwSettlement(per)}원 (${n > 0 ? n : '-'}명)',
@@ -2258,15 +3201,17 @@ class _SharedExpenseSettlementFlowDialogState
               ),
               const SizedBox(height: 14),
               ...List.generate(
-                _memberNames.length,
+                _members.length,
                 (i) => _buildMemberRow(context, i),
               ),
             ],
             const SizedBox(height: 20),
             PrimaryButton(
-              label: '정산하기',
-              onPressed: () {
-                if (_loadingMembers) return;
+              label:
+                  _submittingSettlementRequest ? '요청 중...' : '정산 요청 보내기',
+              enabled: !_submittingSettlementRequest && !_loadingMembers,
+              onPressed: () async {
+                if (_loadingMembers || _submittingSettlementRequest) return;
                 if (_getSelectedMemberCount() == 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -2276,16 +3221,315 @@ class _SharedExpenseSettlementFlowDialogState
                   );
                   return;
                 }
-                final messenger = ScaffoldMessenger.of(context);
-                Navigator.of(context).pop();
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('정산 요청 알림을 보냈어요.'),
-                    behavior: SnackBarBehavior.floating,
-                    duration: Duration(seconds: 3),
-                  ),
-                );
+
+                if (!widget.loadFromSettlementApi) {
+                  final messenger = ScaffoldMessenger.of(context);
+                  Navigator.of(context).pop();
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('정산 요청 알림을 보냈어요. (데모 모드)'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                  return;
+                }
+
+                if (_members.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        '하우스 멤버 정보가 없어 정산 요청을 보낼 수 없어요.',
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
+                final purchaseIds = <int>[];
+                for (final line in _lines) {
+                  if (!line.selected) continue;
+                  final id = line.purchaseId;
+                  if (id == null || id <= 0) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          '선택한 줄 중 서버에 등록되지 않은 구매가 있어요.',
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+                  purchaseIds.add(id);
+                }
+
+                final memberIds = <int>[];
+                for (var i = 0; i < _members.length; i++) {
+                  if (_memberSelected[i]) {
+                    memberIds.add(_members[i].userId);
+                  }
+                }
+
+                setState(() => _submittingSettlementRequest = true);
+                try {
+                  final result = await _supplyService.requestSettlement(
+                    purchaseIds: purchaseIds,
+                    memberIds: memberIds,
+                  );
+                  if (!mounted) return;
+                  setState(() {
+                    _submittingSettlementRequest = false;
+                    _requestResult = result;
+                    _step = 2;
+                    _confirmingSettlement = false;
+                  });
+                } on ApiException catch (e) {
+                  if (mounted) {
+                    setState(() => _submittingSettlementRequest = false);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(e.message),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                }
               },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepConfirm(BuildContext context) {
+    final res = _requestResult;
+    if (res == null) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          '정산 요약을 불러올 수 없어요.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.75),
+            fontSize: 14,
+            fontFamily: 'Pretendard Variable',
+          ),
+        ),
+      );
+    }
+
+    final itemsPreview = res.items
+        .map(
+          (e) =>
+              '· ${e.itemName} · ${_formatKrwSettlement(e.amount)}원',
+        )
+        .join('\n');
+    final membersPreview = res.members
+        .map(
+          (m) => '· ${m.name}: ${_formatKrwSettlement(m.amount)}원',
+        )
+        .join('\n');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                IconButton(
+                  onPressed: _confirmingSettlement
+                      ? null
+                      : () => setState(() {
+                            _step = 1;
+                            _requestResult = null;
+                          }),
+                  icon: Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    color: Colors.white.withOpacity(0.9),
+                    size: 20,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 40,
+                    height: 40,
+                  ),
+                ),
+                const Expanded(
+                  child: Text(
+                    '정산 요청 완료',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Pretendard Variable',
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _confirmingSettlement
+                      ? null
+                      : () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withOpacity(0.9),
+                    size: 22,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 40,
+                    height: 40,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '서버에 정산 요청이 접수되었습니다.\n금액을 확인한 뒤 「정산 완료 처리」를 눌러 마무리하세요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.88),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Pretendard Variable',
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FrostedPanel(
+              borderRadius: BorderRadius.circular(18),
+              backgroundOpacity: 0.08,
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '정산 ID ${res.settlementId}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '합계 ${_formatKrwSettlement(res.totalAmount)}원 · '
+                    '1인 ${_formatKrwSettlement(res.amountPerMember)}원 '
+                    '(${res.memberCount}명)',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.88),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Pretendard Variable',
+                      height: 1.35,
+                    ),
+                  ),
+                  if (itemsPreview.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      '포함 품목',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.55),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      itemsPreview,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 12,
+                        height: 1.45,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                  ],
+                  if (membersPreview.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      '멤버별',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.55),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      membersPreview,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 12,
+                        height: 1.45,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            PrimaryButton(
+              label: _confirmingSettlement ? '처리 중...' : '정산 완료 처리',
+              enabled: !_confirmingSettlement,
+              onPressed: () async {
+                final sid = res.settlementId;
+                if (sid <= 0) return;
+                setState(() => _confirmingSettlement = true);
+                try {
+                  await _supplyService.confirmSettlement(sid);
+                  if (!mounted) return;
+                  widget.onFinished?.call();
+                  final messenger = ScaffoldMessenger.maybeOf(context);
+                  Navigator.of(context).pop();
+                  messenger?.showSnackBar(
+                    const SnackBar(
+                      content: Text('정산 완료 처리했어요.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } on ApiException catch (e) {
+                  if (mounted) {
+                    setState(() => _confirmingSettlement = false);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(e.message),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _confirmingSettlement
+                  ? null
+                  : () {
+                      widget.onFinished?.call();
+                      Navigator.of(context).pop();
+                    },
+              child: Text(
+                '나중에 완료하기',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.72),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'Pretendard Variable',
+                ),
+              ),
             ),
           ],
         ),
@@ -2305,7 +3549,9 @@ class _SharedExpenseSettlementFlowDialogState
       ),
       child: _step == 0
           ? _buildStepSelect(context)
-          : _buildStepMembers(context),
+          : _step == 1
+              ? _buildStepMembers(context)
+              : _buildStepConfirm(context),
     );
   }
 }
@@ -2317,11 +3563,20 @@ class _UtilitySelectableLine {
   _UtilitySelectableLine({required this.item}) : selected = true;
 }
 
-/// 공과금 정산: 기간·항목 선택 → 정산할 인원 선택 → 완료 모달
+/// 공과금 정산: 기간·항목 선택 → 정산할 인원 선택
+/// API 모드: `GET /api/bills/settlement/list` 로 UNSETTLED 후보 조회
 class _UtilityBillSettlementFlowDialog extends StatefulWidget {
-  final List<SharedExpenseTableItem> items;
+  final List<SharedExpenseTableItem> fallbackItems;
+  final bool fetchSettlementListViaApi;
+  final DateTime? initialRangeStart;
+  final DateTime? initialRangeEnd;
 
-  const _UtilityBillSettlementFlowDialog({required this.items});
+  const _UtilityBillSettlementFlowDialog({
+    required this.fallbackItems,
+    this.fetchSettlementListViaApi = false,
+    this.initialRangeStart,
+    this.initialRangeEnd,
+  });
 
   @override
   State<_UtilityBillSettlementFlowDialog> createState() =>
@@ -2334,8 +3589,13 @@ class _UtilityBillSettlementFlowDialogState
 
   late DateTime _rangeStart;
   late DateTime _rangeEnd;
-  late final List<_UtilitySelectableLine> _lines;
+  List<_UtilitySelectableLine> _lines = [];
+
   late int _perPersonWon;
+  int? _lastServerAmountPerMember;
+
+  bool _settlementListLoading = false;
+  String? _settlementLoadError;
 
   List<String> _memberNames = [];
   List<bool> _memberSelected = [];
@@ -2343,17 +3603,81 @@ class _UtilityBillSettlementFlowDialogState
   bool _loadingMembers = true;
 
   final AuthService _authService = AuthService();
+  final UtilityBillService _utilityBillService = UtilityBillService();
+
+  static String _dateToIsoYmd(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   @override
   void initState() {
     super.initState();
-    _rangeStart = DateTime(2025, 8, 15);
-    _rangeEnd = DateTime(2025, 8, 15);
-    _lines = widget.items
-        .map((e) => _UtilitySelectableLine(item: e))
-        .toList();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (widget.initialRangeStart != null && widget.initialRangeEnd != null) {
+      _rangeStart = widget.initialRangeStart!;
+      _rangeEnd = widget.initialRangeEnd!;
+    } else if (widget.fetchSettlementListViaApi) {
+      _rangeStart = today.subtract(const Duration(days: 30));
+      _rangeEnd = today;
+    } else {
+      _rangeStart = DateTime(2025, 8, 15);
+      _rangeEnd = DateTime(2025, 8, 15);
+    }
+    if (!widget.fetchSettlementListViaApi) {
+      _lines = widget.fallbackItems
+          .map((e) => _UtilitySelectableLine(item: e))
+          .toList();
+    }
     _perPersonWon = 8000;
     _loadMembers();
+    if (widget.fetchSettlementListViaApi) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _reloadSettlementLines();
+      });
+    }
+  }
+
+  Future<void> _reloadSettlementLines() async {
+    if (!widget.fetchSettlementListViaApi) return;
+    setState(() {
+      _settlementListLoading = true;
+      _settlementLoadError = null;
+    });
+    try {
+      final summary = await _utilityBillService.fetchSettlementList(
+        startDate: _dateToIsoYmd(_rangeStart),
+        endDate: _dateToIsoYmd(_rangeEnd),
+      );
+      if (!mounted) return;
+      setState(() {
+        _lines = summary.bills
+            .map(
+              (b) => _UtilitySelectableLine(item: b.toSharedExpenseTableItem()),
+            )
+            .toList();
+        _lastServerAmountPerMember = summary.amountPerMember > 0
+            ? summary.amountPerMember
+            : null;
+        _settlementListLoading = false;
+        _recalculatePerPerson();
+        _ensureMemberAmountControllers();
+        _syncMemberAmountFields();
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _settlementListLoading = false;
+        _settlementLoadError = e.message;
+        _lines = [];
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _settlementListLoading = false;
+        _settlementLoadError = '정산 대상 목록을 불러오지 못했습니다.';
+        _lines = [];
+      });
+    }
   }
 
   @override
@@ -2456,11 +3780,17 @@ class _UtilityBillSettlementFlowDialogState
     }
     final n = _getSelectedMemberCount();
     if (n <= 0) {
-      _perPersonWon = 8000;
+      _perPersonWon = (_lastServerAmountPerMember != null &&
+              _lastServerAmountPerMember! > 0)
+          ? _lastServerAmountPerMember!
+          : 8000;
       return;
     }
     if (!any || sum <= 0) {
-      _perPersonWon = 8000;
+      _perPersonWon = (_lastServerAmountPerMember != null &&
+              _lastServerAmountPerMember! > 0)
+          ? _lastServerAmountPerMember!
+          : 8000;
       return;
     }
     _perPersonWon = (sum / n).ceil();
@@ -2469,16 +3799,19 @@ class _UtilityBillSettlementFlowDialogState
   Future<void> _pickDate(bool isStart) async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final firstDate = DateTime(today.year - 20, 1, 1);
     final maxDate = today.add(const Duration(days: 365));
     final selected = isStart ? _rangeStart : _rangeEnd;
-    final initialDate = selected.isBefore(today) ? today : selected;
+    var initialDate = selected;
+    if (initialDate.isBefore(firstDate)) initialDate = firstDate;
+    if (initialDate.isAfter(maxDate)) initialDate = maxDate;
 
     final DateTime? picked = await showDialog<DateTime>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => GlassmorphicDatePicker(
         initialDate: initialDate,
-        firstDate: today,
+        firstDate: firstDate,
         lastDate: maxDate,
         isStartDate: isStart,
       ),
@@ -2499,6 +3832,9 @@ class _UtilityBillSettlementFlowDialogState
           }
         }
       });
+      if (mounted && widget.fetchSettlementListViaApi) {
+        _reloadSettlementLines();
+      }
     }
   }
 
@@ -2524,15 +3860,18 @@ class _UtilityBillSettlementFlowDialogState
               ),
               const SizedBox(width: 6),
               Flexible(
-                child: Text(
-                  _formatDate(date),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'Pretendard Variable',
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _formatDate(date),
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Pretendard Variable',
+                    ),
                   ),
                 ),
               ),
@@ -2595,15 +3934,18 @@ class _UtilityBillSettlementFlowDialogState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(width: 40),
-                const Expanded(
-                  child: Text(
-                    '공과금 정산',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      fontFamily: 'Pretendard Variable',
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 15),
+                    child: Text(
+                      '공과금 정산',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        fontFamily: 'Pretendard Variable',
+                      ),
                     ),
                   ),
                 ),
@@ -2653,11 +3995,41 @@ class _UtilityBillSettlementFlowDialogState
               ],
             ),
             const SizedBox(height: 18),
-            if (_lines.isEmpty)
+            if (_settlementListLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white54,
+                    ),
+                  ),
+                ),
+              )
+            else if (_settlementLoadError != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  _settlementLoadError!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.72),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Pretendard Variable',
+                  ),
+                ),
+              )
+            else if (_lines.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 child: Text(
-                  '표에 공과금 내역을 먼저 추가해 주세요.',
+                  widget.fetchSettlementListViaApi
+                      ? '해당 기간에 정산할 공과금이 없어요.'
+                      : '표에 공과금 내역을 먼저 추가해 주세요.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.55),
@@ -2727,6 +4099,25 @@ class _UtilityBillSettlementFlowDialogState
             PrimaryButton(
               label: '다음',
               onPressed: () {
+                if (_settlementListLoading) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('목록을 불러오는 중이에요.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+                if (_settlementLoadError != null &&
+                    widget.fetchSettlementListViaApi) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(_settlementLoadError!),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
                 if (_lines.isEmpty || !_lines.any((e) => e.selected)) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
@@ -2962,6 +4353,9 @@ class _ExtractedReceiptLine {
   int amountWon;
   int qty;
   bool selected;
+  /// API가 준 category / subCategory 코드 (null이면 등록 시 기본값 사용)
+  String? categoryCode;
+  String? subCategoryCode;
 
   _ExtractedReceiptLine({
     required this.name,
@@ -2969,12 +4363,16 @@ class _ExtractedReceiptLine {
     required this.amountWon,
     required this.qty,
     this.selected = true,
+    this.categoryCode,
+    this.subCategoryCode,
   });
 }
 
-/// AI 영수증: 소개 → 분석 확인 → 추출 (카메라 미연동 시 촬영만 시뮬레이션)
+/// AI 영수증: 카메라/앨범 → 분석 API → 추출·수정 → 선택 등록
 class _AiReceiptRecognitionFlowDialog extends StatefulWidget {
-  const _AiReceiptRecognitionFlowDialog();
+  const _AiReceiptRecognitionFlowDialog({this.onPurchasesRegistered});
+
+  final void Function()? onPurchasesRegistered;
 
   @override
   State<_AiReceiptRecognitionFlowDialog> createState() =>
@@ -2983,10 +4381,22 @@ class _AiReceiptRecognitionFlowDialog extends StatefulWidget {
 
 class _AiReceiptRecognitionFlowDialogState
     extends State<_AiReceiptRecognitionFlowDialog> {
+  /// 서버(nginx) 업로드 한도(413)에 걸리지 않도록 가장자리·품질 제한
+  static const double _kReceiptImageMaxEdge = 1600;
+  static const int _kReceiptImageQuality = 72;
+
   /// 0: 촬영 안내, 1: 분석 확인, 2: 추출 내용
   int _step = 0;
 
-  late final List<_ExtractedReceiptLine> _lines;
+  final ImagePicker _imagePicker = ImagePicker();
+  final SupplyService _supplyService = SupplyService();
+
+  /// 촬영·앨범에서 선택한 영수증
+  XFile? _capturedReceipt;
+
+  List<_ExtractedReceiptLine> _lines = [];
+  bool _analyzing = false;
+  bool _registering = false;
 
   /// 다이얼로그 닫기: 포커스 해제 후 다음 프레임에 pop 해 라이프사이클·의존성 assert 방지
   void _closeReceiptFlowDialog() {
@@ -3006,55 +4416,343 @@ class _AiReceiptRecognitionFlowDialogState
   @override
   void initState() {
     super.initState();
-    _lines = [
-      _ExtractedReceiptLine(
-        name: '가위',
-        date: DateTime(2025, 8, 25),
-        amountWon: 3000,
-        qty: 1,
-      ),
-      _ExtractedReceiptLine(
-        name: '주방칼',
-        date: DateTime(2025, 8, 28),
-        amountWon: 4000,
-        qty: 1,
-      ),
-      _ExtractedReceiptLine(
-        name: '키친타올',
-        date: DateTime(2025, 8, 25),
-        amountWon: 2500,
-        qty: 2,
-      ),
-      _ExtractedReceiptLine(
-        name: '쓰레기봉투',
-        date: DateTime(2025, 8, 25),
-        amountWon: 1800,
-        qty: 1,
-      ),
-      _ExtractedReceiptLine(
-        name: '주방세제',
-        date: DateTime(2025, 8, 26),
-        amountWon: 3200,
-        qty: 1,
-      ),
-      _ExtractedReceiptLine(
-        name: '라면 5입',
-        date: DateTime(2025, 8, 27),
-        amountWon: 4500,
-        qty: 1,
-      ),
-      _ExtractedReceiptLine(
-        name: '우유 900ml',
-        date: DateTime(2025, 8, 28),
-        amountWon: 3100,
-        qty: 2,
-      ),
-    ];
   }
 
-  void _simulateCapture() {
-    // TODO: image_picker / camera — 현재는 사용자가 촬영한 것으로 간주
-    setState(() => _step = 1);
+  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  static List<_ExtractedReceiptLine> _linesFromApiItems(
+    List<ReceiptRecognizedItem> items,
+  ) {
+    final now = _dateOnly(DateTime.now());
+    return items.map((e) {
+      var dt = e.purchaseDate != null && e.purchaseDate!.trim().isNotEmpty
+          ? DateTime.tryParse(e.purchaseDate!.trim())
+          : null;
+      if (dt != null) {
+        dt = _dateOnly(dt);
+      } else {
+        dt = now;
+      }
+      final name = e.itemName.trim();
+      var amount = e.amount;
+      if (amount == null || amount < 1) {
+        amount = 1;
+      }
+      var qty = e.quantity;
+      if (qty == null || qty < 1) {
+        qty = 1;
+      }
+      return _ExtractedReceiptLine(
+        name: name.isEmpty ? '(이름 없음)' : name,
+        date: dt,
+        amountWon: amount,
+        qty: qty,
+        selected: true,
+        categoryCode: e.category,
+        subCategoryCode: e.subCategory,
+      );
+    }).toList();
+  }
+
+  Future<void> _analyzeAndGoToExtract() async {
+    final file = _capturedReceipt;
+    if (file == null || !mounted) return;
+    setState(() => _analyzing = true);
+    try {
+      final result = await _supplyService.analyzeReceiptImage(file);
+      if (!mounted) return;
+      if (result.items.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('인식된 품목이 없어요. 다른 이미지로 시도해 주세요.'),
+            duration: Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      setState(() {
+        _lines = _linesFromApiItems(result.items);
+        _step = 2;
+      });
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('분석에 실패했어요. ($e)'),
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _analyzing = false);
+      }
+    }
+  }
+
+  Future<void> _openGallery() async {
+    try {
+      final file = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: _kReceiptImageMaxEdge,
+        maxHeight: _kReceiptImageMaxEdge,
+        imageQuality: _kReceiptImageQuality,
+      );
+      if (!mounted) return;
+      if (file == null) return;
+      setState(() {
+        _capturedReceipt = file;
+        _step = 1;
+      });
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      final denied = e.code == 'photo_access_denied' ||
+          e.code == 'camera_access_denied';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            denied
+                ? '사진 보관함 접근이 거부되었어요. 설정에서 허용해 주세요.'
+                : '사진을 열 수 없습니다. (${e.message ?? e.code})',
+          ),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('사진을 선택할 수 없습니다. ($e)'),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _registerSelectedLines() async {
+    final selected = _lines.where((e) => e.selected).toList();
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('선택된 항목이 없어요.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    for (final line in selected) {
+      if (line.amountWon < 1) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('금액이 0인 품목이 있어요. 금액을 수정한 뒤 다시 시도해 주세요.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
+    final useApi = !usePartitionDummyData(
+      Provider.of<AuthProvider>(context, listen: false).isAuthenticated,
+    );
+    if (!useApi) {
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      FocusManager.instance.primaryFocus?.unfocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context, rootNavigator: true).maybePop();
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text(
+              '${selected.length}건 (더미/미로그인: 서버 등록은 로그인 후 가능해요)',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      });
+      return;
+    }
+
+    final defMaj = kDefaultSupplyCategoryGroups.first.category;
+    final defMin =
+        kDefaultSupplyCategoryGroups.first.subCategories.first.subCategory;
+
+    setState(() => _registering = true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      for (final line in selected) {
+        final cat =
+            (line.categoryCode != null && line.categoryCode!.isNotEmpty)
+                ? line.categoryCode!
+                : defMaj;
+        final sub =
+            (line.subCategoryCode != null && line.subCategoryCode!.isNotEmpty)
+                ? line.subCategoryCode!
+                : defMin;
+        final isoDate =
+            '${line.date.year}-${line.date.month.toString().padLeft(2, '0')}-'
+            '${line.date.day.toString().padLeft(2, '0')}';
+        await _supplyService.createPurchase(
+          itemName: line.name,
+          purchaseDate: isoDate,
+          amount: line.amountWon,
+          quantity: line.qty,
+          category: cat,
+          subCategory: sub,
+        );
+      }
+      widget.onPurchasesRegistered?.call();
+      if (!mounted) return;
+      FocusManager.instance.primaryFocus?.unfocus();
+      final n = selected.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context, rootNavigator: true).maybePop();
+        messenger?.showSnackBar(
+          SnackBar(
+            content: Text('$n건을 등록했어요.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      });
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('등록에 실패했어요. ($e)'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _registering = false);
+      }
+    }
+  }
+
+  /// 앱 내 동의 후 시스템 카메라 실행. iOS/Android는 OS가 권한·허용 범위를 처리합니다.
+  Future<void> _openCameraAfterConsent() async {
+    final agreed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF2C2C2E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            '카메라 촬영 동의',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'Pretendard Variable',
+            ),
+          ),
+          content: SingleChildScrollView(
+            child: Text(
+              '영수증 인식을 위해 카메라로 촬영합니다.\n'
+              '촬영 전 Partition 앱에서 동의가 필요하며, 이후 기기에서 카메라 접근 허용 여부를 선택할 수 있습니다.\n\n'
+              '(iOS 등에서는 시스템이 「허용 안 함」「허용」 등의 선택 화면을 보여 줍니다.)',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.82),
+                fontSize: 14,
+                height: 1.4,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(
+                '동의하지 않음',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.65),
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'Pretendard Variable',
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text(
+                '동의하고 촬영',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Pretendard Variable',
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (agreed != true || !mounted) return;
+
+    try {
+      final file = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear,
+        maxWidth: _kReceiptImageMaxEdge,
+        maxHeight: _kReceiptImageMaxEdge,
+        imageQuality: _kReceiptImageQuality,
+      );
+      if (!mounted) return;
+      if (file == null) return;
+      setState(() {
+        _capturedReceipt = file;
+        _step = 1;
+      });
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.code == 'camera_access_denied'
+                ? '카메라 접근이 거부되었어요. 설정에서 허용해 주세요.'
+                : '카메라를 열 수 없습니다. (${e.message ?? e.code})',
+          ),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('카메라를 열 수 없습니다. ($e)'),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
@@ -3124,10 +4822,23 @@ class _AiReceiptRecognitionFlowDialogState
               height: 1.22,
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 20),
           PrimaryButton(
             label: '촬영하기',
-            onPressed: _simulateCapture,
+            onPressed: _openCameraAfterConsent,
+          ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: _openGallery,
+            child: Text(
+              '앨범에서 선택',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.88),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
           ),
         ],
       ),
@@ -3153,7 +4864,9 @@ class _AiReceiptRecognitionFlowDialogState
           ),
           const SizedBox(height: 7),
           Text(
-            '촬영한 영수증 이미지를 분석해 품목을 추출합니다.',
+            _capturedReceipt != null
+                ? '선택한 영수증 이미지를 서버에 보내 품목을 추출합니다.'
+                : '영수증 이미지를 서버에 보내 품목을 추출합니다.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withOpacity(0.88),
@@ -3163,25 +4876,51 @@ class _AiReceiptRecognitionFlowDialogState
               height: 1.35,
             ),
           ),
-          const SizedBox(height: 28),
-          PrimaryButton(
-            label: '분석하기',
-            onPressed: () => setState(() => _step = 2),
-          ),
-          const SizedBox(height: 10),
-          Center(
-            child: TextButton(
-              onPressed: _closeReceiptFlowDialog,
-              child: Text(
-                '취소',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.75),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+          if (_analyzing) ...[
+            const SizedBox(height: 24),
+            const Center(
+              child: SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white70,
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              '이미지를 분석하는 중…',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.65),
+                fontSize: 13,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+          ],
+          if (!_analyzing) const SizedBox(height: 28),
+          PrimaryButton(
+            label: '분석하기',
+            enabled: !_analyzing,
+            onPressed: _analyzeAndGoToExtract,
           ),
+          if (!_analyzing) ...[
+            const SizedBox(height: 10),
+            Center(
+              child: TextButton(
+                onPressed: _closeReceiptFlowDialog,
+                child: Text(
+                  '취소',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.75),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -3575,23 +5314,8 @@ class _AiReceiptRecognitionFlowDialogState
             children: [
               PrimaryButton(
                 label: '선택한 내용 등록하기',
-                onPressed: () {
-                  final messenger = ScaffoldMessenger.maybeOf(context);
-                  final n = _lines.where((e) => e.selected).length;
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) return;
-                    Navigator.of(context, rootNavigator: true).maybePop();
-                    messenger?.showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          n > 0 ? '$n건 등록 요청 (더미)' : '선택된 항목이 없습니다.',
-                        ),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  });
-                },
+                enabled: !_registering,
+                onPressed: _registerSelectedLines,
               ),
               const SizedBox(height: 8),
               Center(
