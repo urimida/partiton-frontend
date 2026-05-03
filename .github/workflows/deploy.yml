@@ -1,0 +1,29 @@
+name: Deploy Flutter Web to Vercel
+
+on:
+  push:
+    branches:
+      - main  # 본인의 메인 브랜치 이름 확인 (main 또는 master)
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Build Web
+        run: flutter build web --release
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel
+
+      - name: Deploy to Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
