@@ -40,6 +40,9 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   /// 읽은 알림 행 배경 — 흰 톤보다 어둡고 남색(#26394B) 계열 혼합
   static const Color _alarmReadRowFill = Color(0xFF1A2F42);
 
+  /// 닫힌 상태 통합 하단바(글래스+탭) 높이. 드래그·오브·스크롤 인셋과 맞출 것.
+  static const double _kUnifiedBottomClosedHeight = 163.0;
+
   int _currentIndex = 0;
 
   /// 마우스·트랙패드 호버, 또는 손가락을 바 위에 댄 동안 글로우
@@ -86,7 +89,8 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   void _showAlarmApiFeedback(String message, {required bool isError}) {
     if (!mounted) return;
     debugPrint(isError ? '[Alarms][FAIL] $message' : '[Alarms][OK] $message');
-    final bottom = MediaQuery.of(context).padding.bottom + 176;
+    final bottom = MediaQuery.of(context).padding.bottom +
+        (_kUnifiedBottomClosedHeight + 28);
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -316,13 +320,15 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   /// 탭별로 기존 [Scaffold.body] 패딩과 동일 (스와이프 중에도 각 페이지 레이아웃 유지)
   Widget _paddedTabPage(BuildContext context, int index, Widget screen) {
     final fullBleed = index == 1 || index == 2 || index == 3;
+    // 하단 글래스 탭바와의 여백은 각 탭이 스크롤·본문 패딩으로 처리
+    // (공용소비·게시판 등과 동일). 여기서 bottom을 주면 홈만 뷰포트가 짧아져 잘림이 남음.
     return Padding(
       padding: EdgeInsets.only(
         top: fullBleed
             ? 0
             : MediaQuery.paddingOf(context).top +
                 (index == 0 ? 0 : kToolbarHeight),
-        bottom: fullBleed ? 0 : 148,
+        bottom: 0,
       ),
       child: screen,
     );
@@ -376,8 +382,8 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
           backgroundColor: Colors.transparent,
           extendBody: true,
           extendBodyBehindAppBar: true,
-          // 공용소비(1)·게시판(3): 커스텀 헤더를 최상단에 붙이기 위해 바깥 top 패딩 없음.
-          // 하단 148은 홈·리포트만 (닫힌 하단바 높이와 맞춤, 바는 화면 하단 붙임).
+          // 공용소비 등: 커스텀 헤더를 최상단에 붙이기 위해 바깥 top 패딩 없음.
+          // 하단은 글래스 탭바와 겹치지 않도록 각 탭 스크롤 패딩에서 처리.
           body: _buildTabPageView(context),
         ),
         _buildUnifiedBottomComponent(),
@@ -387,16 +393,14 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
 
   /// 하단 통합 컴포넌트: 하단바 ↔ 알림 패널을 같은 글래스 컨테이너 안에서 전환
   Widget _buildUnifiedBottomComponent() {
-    /// 아래쪽만 늘리며 바닥에 붙이는 높이(이전 10px 띄움만큼 하단 확장).
-    const double closedHeight = 148.0;
-
     return AnimatedBuilder(
       animation: _panelController,
       builder: (context, child) {
         final t = _panelController.value;
         final screenH = MediaQuery.sizeOf(context).height;
         final openHeight = screenH * _alarmPanelOpenHeightFraction;
-        final height = lerpDouble(closedHeight, openHeight, t)!;
+        final height =
+            lerpDouble(_kUnifiedBottomClosedHeight, openHeight, t)!;
         const double bottom = 0.0;
         return Positioned(
           bottom: bottom,
@@ -416,8 +420,8 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
       onVerticalDragUpdate: (details) {
         final screenH = MediaQuery.sizeOf(context).height;
         final openH = screenH * _alarmPanelOpenHeightFraction;
-        const closedH = 148.0;
-        final dragRange = (openH - closedH).clamp(240.0, 1200.0);
+        final dragRange =
+            (openH - _kUnifiedBottomClosedHeight).clamp(240.0, 1200.0);
         _panelController.value =
             (_panelController.value - details.delta.dy / dragRange)
                 .clamp(0.0, 1.0);
@@ -495,7 +499,9 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                     ),
                   );
                 },
-                child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 5),
+                  child: SafeArea(
                   top: false,
                   left: false,
                   right: false,
@@ -536,7 +542,8 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                       ),
                     ),
                   ),
-              ), // SafeArea
+                  ), // SafeArea
+                ), // Padding
               ),
               // 알림 패널 내용 (패널이 열릴수록 나타남)
               AnimatedBuilder(
@@ -566,6 +573,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                   final opacity =
                       (1.0 - _panelController.value * 4.0).clamp(0.0, 1.0);
                   return Positioned(
+                    // 닫힌 하단 패널이 위로 길어지면 스택 원점도 같이 위로 움직여 오브가 함께 올라감.
                     top: -20,
                     child: IgnorePointer(
                       ignoring: _panelController.value > 0.1,
@@ -1096,7 +1104,7 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
   final InsightsQueryService _insights = InsightsQueryService();
   final AudioRecorder _recorder = AudioRecorder();
 
-  // 0 = 텍스트로 질문, 1 = 자연어(음성)로 질문
+  // 0 = 텍스트로 질문, 1 = 음성으로 질문
   int _modeIndex = 0;
 
   // 텍스트 모드
@@ -1472,17 +1480,6 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 드래그 핸들
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.38),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 18),
-
               // 제목
               const Text(
                 '파티션 AI에게 질문하기',
@@ -1617,7 +1614,7 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
       child: Row(
         children: [
           _buildModeTab('텍스트로 질문', 0),
-          _buildModeTab('자연어로 질문', 1),
+          _buildModeTab('음성으로 질문', 1),
         ],
       ),
     );

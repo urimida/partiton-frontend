@@ -16,6 +16,8 @@ class AppConfig {
   static const String kakaoLoginEndpoint = '/auth/kakao';
   static const String householdsEndpoint = '/households';
   static const String householdsJoinEndpoint = '/households/join';
+  /// 현재 사용자 가구 탈퇴 (본문 규격은 백엔드 Swagger 기준으로 맞춤)
+  static const String householdsLeaveEndpoint = '/households/leave';
   /// 그룹(가구) 멤버 목록 (정산 시 참여자 선택용)
   static const String householdMembersEndpoint = '/households/members';
   /// PATCH 등에 사용. GET 내 정보 조회는 앱에서 호출하지 않음(백엔드 미구현).

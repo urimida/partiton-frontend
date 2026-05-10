@@ -10,6 +10,7 @@ import 'package:partition_app/shared/widgets/home_calendar_widget.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
 import 'package:partition_app/shared/widgets/chore_assignment_modal.dart';
 import 'package:partition_app/shared/widgets/schedule_registration_modal.dart';
+import 'package:partition_app/shared/widgets/partition_home_settings_modal.dart';
 
 class PartitionHomeScreen extends StatefulWidget {
   const PartitionHomeScreen({super.key});
@@ -19,6 +20,11 @@ class PartitionHomeScreen extends StatefulWidget {
 }
 
 class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
+  /// [PartitionSharedExpenseScreen] 등과 동일 — 하단 글래스 탭바·노치와 겹침 방지
+  static const double _contentPaddingBottom = 16.0;
+  static const double _scrollBottomInsetForTabBar = 147.0;
+  static const double _scrollExtraTailSpace = 56.0;
+
   DateTime _selectedDate = DateTime.now();
   final GlobalKey<HomeCalendarWidgetState> _calendarKey =
       GlobalKey<HomeCalendarWidgetState>();
@@ -51,6 +57,15 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
       builder: (context) => ChoreAssignmentModal(
         onSuccess: _refreshCalendar,
       ),
+    );
+  }
+
+  void _showSettingsModal(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      barrierDismissible: true,
+      builder: (context) => const PartitionHomeSettingsModal(),
     );
   }
 
@@ -151,13 +166,22 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final buttonWidth = screenWidth - 32;
+    final scrollBottomPadding = _contentPaddingBottom +
+        MediaQuery.viewPaddingOf(context).bottom +
+        _scrollBottomInsetForTabBar +
+        _scrollExtraTailSpace;
 
     return Container(
       width: double.infinity,
       height: double.infinity,
       color: Colors.transparent,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          0,
+          16,
+          scrollBottomPadding,
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -189,6 +213,12 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
               label: '집안일 자동 배정',
               width: buttonWidth,
               onPressed: () => _showChoreAssignmentModal(context),
+            ),
+            const SizedBox(height: 10),
+            PrimaryButton(
+              label: '설정',
+              width: buttonWidth,
+              onPressed: () => _showSettingsModal(context),
             ),
             const SizedBox(height: 12),
             _HomeShareCard(

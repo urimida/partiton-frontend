@@ -193,6 +193,18 @@ class StorageService {
     return DateTime.fromMillisecondsSinceEpoch(ms);
   }
 
+  /// 가구 참여 정보만 초기화(토큰·닉네임 유지 → 그룹 선택·재참여용).
+  static Future<void> clearHouseholdAffiliation() async {
+    try {
+      await _prefs?.remove('household_id');
+    } catch (_) {}
+    try {
+      await _secureStorage.delete(key: 'household_id');
+    } catch (_) {}
+    await removeUserRole();
+    await setUserRole('GUEST');
+  }
+
   static Future<bool> clear() async {
     try {
       // Secure storage 삭제

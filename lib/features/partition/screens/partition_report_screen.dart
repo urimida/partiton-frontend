@@ -149,7 +149,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   static const double _headerHeight = 87.5;
   static const double _contentPaddingHorizontal = 16.0;
   static const double _contentPaddingBottom = 16.0;
-  static const double _scrollBottomInsetForTabBar = 132.0;
+  static const double _scrollBottomInsetForTabBar = 147.0;
   static const double _scrollExtraTailSpace = 56.0;
   static const double _chipVerticalSpacingScale = 0.5;
   static const double _spacingSmall = 10.0;

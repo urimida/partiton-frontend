@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -40,15 +39,21 @@ class _PartitionSharedExpenseScreenState
   static const double _contentPaddingHorizontal = 16.0;
   static const double _contentPaddingBottom = 16.0;
   /// 하단 글래스 탭바 등이 본문과 겹칠 때 스크롤로 버튼까지 닿게 하기 위한 추가 여백
-  static const double _scrollBottomInsetForTabBar = 132.0;
+  static const double _scrollBottomInsetForTabBar = 147.0;
   /// 스크롤 끝에서 탭바·손가락 여유까지 더 내릴 수 있게 하는 추가 하단 공간
   static const double _scrollExtraTailSpace = 56.0;
   /// 물품/공과금 칩 한 줄 높이(패딩 포함 추정) — 대칭 간격 계산용
   static const double _filterChipRowHeight = 46.0;
-  /// 남는 세로가 적을 때도 헤더↔칩↔카드 사이가 0으로 붙지 않도록 하는 최소 간격
-  static const double _chipOuterVerticalMinGap = 9.0;
-  /// `band`에서 나눈 대칭 여백에 곱함 (1.0 = 남는 높이를 그대로 위·아래에 분배)
+  /// [PartitionReportScreen] 과 동일 — band 계산 시 대칭 반쪽 높이 바닥
+  static const double _minSymmetricPadBandHalf = 14.0;
+  /// 리포트 `symmetricPad + 3`(조회 기간 행 상·하)과 동일
+  static const double _anchorVerticalInsetBonus = 3.0;
+  /// `band`에서 나눈 대칭 여백에 곱함 (리포트 `_chipVerticalSpacingScale` 과 동일)
   static const double _chipVerticalSpacingScale = 0.5;
+  /// 리포트 `_reportSectionGap` 과 통일 — 메인 카드와 하단 액션 줄 사이
+  static const double _betweenMainCardAndActions = 24.0;
+  /// 리포트 목록 마지막 `SizedBox(16)` 과 통일
+  static const double _scrollListTailGap = 16.0;
   static const double _spacingSmall = 10.0;
   static const double _spacingMedium = 16.0;
   static const double _spacingLarge = 20.0;
@@ -827,7 +832,10 @@ class _PartitionSharedExpenseScreenState
     final actionCount = 1;
     final actionsH =
         46 * actionCount + _spacingSmall * (actionCount > 1 ? actionCount - 1 : 0);
-    return cardH + _spacingSmall + actionsH + 12;
+    return cardH +
+        _betweenMainCardAndActions +
+        actionsH +
+        _scrollListTailGap;
   }
 
   @override
@@ -866,15 +874,18 @@ class _PartitionSharedExpenseScreenState
               final band = viewportH -
                   belowChipsContentH -
                   _contentPaddingBottom;
-              final symmetricPadFull = band > _filterChipRowHeight
-                  ? (band - _filterChipRowHeight) / 2
-                  : 0.0;
-              final symmetricPad =
-                  symmetricPadFull * _chipVerticalSpacingScale;
-              final chipOuterGap = math.max(
-                _chipOuterVerticalMinGap,
-                symmetricPad + 1.5,
-              );
+              // 리포트: `(band - _dateCardAnchorHeight) / 2` + `_minSymmetricPadBandHalf`
+              final symmetricPadRaw =
+                  (band - _filterChipRowHeight) / 2.0;
+              final symmetricPadFull =
+                  symmetricPadRaw < _minSymmetricPadBandHalf
+                      ? _minSymmetricPadBandHalf
+                      : symmetricPadRaw;
+              final symmetricPad = (symmetricPadFull *
+                      _chipVerticalSpacingScale)
+                  .clamp(12.0, 88.0);
+              final anchorVerticalInset =
+                  symmetricPad + _anchorVerticalInsetBonus;
 
               return ListView(
                 physics: const BouncingScrollPhysics(
@@ -888,13 +899,13 @@ class _PartitionSharedExpenseScreenState
                   scrollBottomPadding,
                 ),
                 children: [
-                  SizedBox(height: chipOuterGap),
+                  SizedBox(height: anchorVerticalInset),
                   _buildFilterChips(),
-                  SizedBox(height: chipOuterGap),
+                  SizedBox(height: anchorVerticalInset),
                   _buildMainCard(),
-                  const SizedBox(height: _spacingSmall),
+                  const SizedBox(height: _betweenMainCardAndActions),
                   ..._buildActionButtons(),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: _scrollListTailGap),
                 ],
               );
             },

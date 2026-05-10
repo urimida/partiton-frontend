@@ -19,6 +19,15 @@ class ChoreAssignmentModal extends StatefulWidget {
 }
 
 class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
+  /// 드롭다운 패널이 카드 높이를 넘어가면 터치가 바리어로 새서 창 전체가 닫힘.
+  static const double _kModalCardHeight = 323;
+  /// Stack 좌표: 패딩(24) + 제목 줄 높이(닫기 48) + 부제목·간격 + 집안일 선택 줄(43)
+  static const double _kDropdownTopFromStackTop =
+      24 + 48 + 8 + 13 + 8 + 24 + 43;
+  /// 카드 안에 들어가면서 목록·선택 완료 영역만 살짝 더 컴팩트하게(−10).
+  static const double _kDropdownPanelHeight =
+      _kModalCardHeight - _kDropdownTopFromStackTop - 10;
+
   final Set<String> _selectedChores = {};
   final Set<String> _tempSelectedChores = {};
   late DateTime _startDate;
@@ -452,9 +461,7 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
           onTap: () {}, // 내부 클릭은 전파 방지
           child: Container(
             width: 350,
-            /// 드롭다운이 Stack 밖으로 그려지면 하단(선택 완료 등) 터치가
-            /// 다이얼로그 바리어로 떨어져 전체 모달이 닫힐 수 있음.
-            height: _isDropdownOpen ? 440 : 323,
+            height: _kModalCardHeight,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
@@ -479,7 +486,8 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
               ],
             ),
             child: Stack(
-              clipBehavior: Clip.none,
+              /// 드롭다운이 여기 높이(323)를 넘어가면 터치가 바리어로 새서 전체 창이 닫힘.
+              clipBehavior: Clip.hardEdge,
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(20),
@@ -765,14 +773,14 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
                 // 드롭다운 메뉴 - 최상위 레이어
                 if (_isDropdownOpen)
                   Positioned(
-                    top: 24 + 40 + 8 + 13 + 8 + 24 + 43,
+                    top: _kDropdownTopFromStackTop,
                     left: 24 + (350 - 259.331 - 48) / 2, // 모달 패딩 + 중앙 정렬
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {}, // 드롭다운 내부 클릭은 전파 방지
-                      child: Container(
+                      child: SizedBox(
                         width: 259.331,
-                        constraints: const BoxConstraints(maxHeight: 200),
+                        height: _kDropdownPanelHeight,
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(20),
                           child: BackdropFilter(
@@ -802,9 +810,8 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
                                 ],
                               ),
                               child: Column(
-                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Flexible(
+                                  Expanded(
                                     child: SingleChildScrollView(
                                       padding: const EdgeInsets.all(12),
                                       child: Column(

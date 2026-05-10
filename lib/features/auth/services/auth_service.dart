@@ -205,6 +205,27 @@ class AuthService {
     }
   }
 
+  /// 현재 사용자를 가구에서 제거합니다. (서버 미배포 시 404 가능)
+  Future<void> leaveHouseholdAsMember() async {
+    try {
+      await _apiClient.post(
+        AppConfig.householdsLeaveEndpoint,
+        data: const <String, dynamic>{},
+      );
+    } catch (e) {
+      throw ApiException.fromDioError(e);
+    }
+  }
+
+  /// 회원 탈퇴(계정 삭제). 서버는 `DELETE /users/me` 를 가정합니다.
+  Future<void> deleteMyAccountOnServer() async {
+    try {
+      await _apiClient.delete(AppConfig.updateUserNameEndpoint);
+    } catch (e) {
+      throw ApiException.fromDioError(e);
+    }
+  }
+
   /// 그룹(가구) 참여
   Future<HouseholdResponseModel> joinHousehold({
     required String inviteCode,
