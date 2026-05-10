@@ -272,29 +272,27 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 60),
-                    // 카카오 로그인 버튼
-                    SizedBox(
-                      width: double.infinity,
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _isKakaoLoginLoading ? null : _handleKakaoLogin,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            width: double.infinity,
-                            height: 50,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                    // 카카오 로그인 버튼 — 공식 에셋 비율 유지 (전체 너비로 늘리지 않음)
+                    Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 366),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _isKakaoLoginLoading ? null : _handleKakaoLogin,
+                            borderRadius: BorderRadius.circular(8),
                             child: _isKakaoLoginLoading
-                                ? const Center(
-                                    child: SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          Color(0xFF000000),
+                                ? const SizedBox(
+                                    height: 48,
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor: AlwaysStoppedAnimation<Color>(
+                                            Color(0xFF000000),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -303,12 +301,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                     borderRadius: BorderRadius.circular(8),
                                     child: Image.asset(
                                       'assets/images/kakao_login_medium_wide.png',
-                                      fit: BoxFit.fill,
+                                      fit: BoxFit.contain,
                                       width: double.infinity,
-                                      height: 50,
                                       errorBuilder: (context, error, stackTrace) {
-                                        // 이미지 로드 실패 시 텍스트 버튼으로 대체
                                         return Container(
+                                          width: double.infinity,
+                                          constraints: const BoxConstraints(
+                                            maxWidth: 366,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: const Color(0xFFFEE500),
                                             borderRadius: BorderRadius.circular(8),
