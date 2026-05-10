@@ -69,6 +69,9 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   AnimationController? _glowController;
   Animation<double>? _glowAnimation;
 
+  /// 좌우 스와이프로 탭 이동
+  final PageController _tabPageController = PageController();
+
   final AlarmService _alarmService = AlarmService();
   List<AlarmItem> _alarms = [];
   int _alarmUnreadCount = 0;
@@ -164,7 +167,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
               alarmId: item.alarmId,
             ),
           );
-      setState(() => _currentIndex = 1);
+      _switchToTab(1, animate: false);
       _closePanel();
     }
 
@@ -219,7 +222,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
             alarmId: aid,
           ),
         );
-    setState(() => _currentIndex = 1);
+    _switchToTab(1, animate: false);
   }
 
   String _formatAlarmTime(DateTime d) {
@@ -273,7 +276,70 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
     _panelController.removeListener(_handlePanelForAlarms);
     _glowController?.dispose();
     _panelController.dispose();
+    _tabPageController.dispose();
     super.dispose();
+  }
+
+  /// 하단바·딥링크에서 탭 전환 시 [PageView]와 상태를 맞춤.
+  void _switchToTab(int index, {bool animate = true}) {
+    assert(index >= 0 && index < _screens.length);
+    if (_currentIndex != index) {
+      setState(() => _currentIndex = index);
+    }
+
+    void apply() {
+      if (!_tabPageController.hasClients) return;
+      final pos = _tabPageController.page;
+      final current = pos != null ? pos.round() : _tabPageController.initialPage;
+      if (current == index) return;
+      if (animate) {
+        _tabPageController.animateToPage(
+          index,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+        );
+      } else {
+        _tabPageController.jumpToPage(index);
+      }
+    }
+
+    if (_tabPageController.hasClients) {
+      apply();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        apply();
+      });
+    }
+  }
+
+  /// 탭별로 기존 [Scaffold.body] 패딩과 동일 (스와이프 중에도 각 페이지 레이아웃 유지)
+  Widget _paddedTabPage(BuildContext context, int index, Widget screen) {
+    final fullBleed = index == 1 || index == 2 || index == 3;
+    return Padding(
+      padding: EdgeInsets.only(
+        top: fullBleed
+            ? 0
+            : MediaQuery.paddingOf(context).top +
+                (index == 0 ? 0 : kToolbarHeight),
+        bottom: fullBleed ? 0 : 148,
+      ),
+      child: screen,
+    );
+  }
+
+  Widget _buildTabPageView(BuildContext context) {
+    return PageView.builder(
+      controller: _tabPageController,
+      itemCount: _screens.length,
+      onPageChanged: (i) {
+        if (_currentIndex != i) setState(() => _currentIndex = i);
+      },
+      physics: const BouncingScrollPhysics(
+        parent: AlwaysScrollableScrollPhysics(),
+      ),
+      itemBuilder: (context, i) => _paddedTabPage(context, i, _screens[i]),
+    );
   }
 
   void _openPanel() =>
@@ -312,16 +378,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
           extendBodyBehindAppBar: true,
           // 공용소비(1)·게시판(3): 커스텀 헤더를 최상단에 붙이기 위해 바깥 top 패딩 없음.
           // 하단 148은 홈·리포트만 (닫힌 하단바 높이와 맞춤, 바는 화면 하단 붙임).
-          body: Padding(
-            padding: EdgeInsets.only(
-              top: fullBleedBody
-                  ? 0
-                  : MediaQuery.of(context).padding.top +
-                      (_currentIndex == 0 ? 0 : kToolbarHeight),
-              bottom: fullBleedBody ? 0 : 148,
-            ),
-            child: _screens[_currentIndex],
-          ),
+          body: _buildTabPageView(context),
         ),
         _buildUnifiedBottomComponent(),
       ],
@@ -844,11 +901,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
 
     return Expanded(
       child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onTap: () => _switchToTab(index),
         behavior: HitTestBehavior.opaque,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

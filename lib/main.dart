@@ -40,6 +40,14 @@ void main() async {
   runApp(const PartitionApp());
 }
 
+/// 모바일 Safari 등에서 scaffold 기본값(밝은 배경)이 비치지 않도록.
+ThemeData _webPageBackdrop(ThemeData base) {
+  return base.copyWith(
+    scaffoldBackgroundColor: const Color(0xFF060F18),
+    canvasColor: const Color(0xFF060F18),
+  );
+}
+
 class PartitionApp extends StatelessWidget {
   const PartitionApp({super.key});
 
@@ -50,8 +58,8 @@ class PartitionApp extends StatelessWidget {
       child: MaterialApp(
         title: AppConfig.appName,
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
-        darkTheme: AppTheme.darkTheme,
+        theme: kIsWeb ? _webPageBackdrop(AppTheme.lightTheme) : AppTheme.lightTheme,
+        darkTheme: kIsWeb ? _webPageBackdrop(AppTheme.darkTheme) : AppTheme.darkTheme,
         themeMode: ThemeMode.system,
         // 디버그 모드에서는 DebugHomeScreen을 시작 화면으로
         home: kDebugMode

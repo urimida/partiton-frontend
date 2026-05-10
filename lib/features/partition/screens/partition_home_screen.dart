@@ -162,11 +162,11 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const SizedBox(height: 0),
+            SizedBox(height: MediaQuery.paddingOf(context).top),
             Image.asset(
               'assets/icons/partition-logo-mini.png',
-              width: 80,
-              height: 80,
+              width: 56,
+              height: 56,
               fit: BoxFit.contain,
             ),
             const SizedBox(height: 26),
