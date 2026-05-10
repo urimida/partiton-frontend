@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:partition_app/core/router/app_router.dart';
 import 'package:partition_app/core/storage/storage_service.dart';
 import 'package:partition_app/shared/widgets/glassmorphism_button.dart';
@@ -117,10 +116,11 @@ class _OnboardingSurveyScreenState extends State<OnboardingSurveyScreen> {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // 로고 이미지
-                    SvgPicture.asset(
-                      'assets/icons/logo.svg',
+                    Image.asset(
+                      'assets/icons/partition-logo-mini.png',
                       width: 80,
                       height: 80,
+                      fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 20),
                     // 글래스모피즘 다이얼로그 박스

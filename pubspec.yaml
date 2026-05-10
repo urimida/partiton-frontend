@@ -26,7 +26,6 @@ dependencies:
   
   # UI 관련
   cupertino_icons: ^1.0.6
-  flutter_svg: ^2.0.9
   
   # 유틸리티
   logger: ^2.0.2+1

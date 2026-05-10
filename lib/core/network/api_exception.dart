@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 
 class ApiException implements Exception {
@@ -83,8 +85,9 @@ class ApiException implements Exception {
             originalError: error,
           );
         default:
+          final tlsMsg = _messageForTlsFailure(error);
           return ApiException(
-            message: '네트워크 오류가 발생했습니다.',
+            message: tlsMsg ?? '네트워크 오류가 발생했습니다.',
             originalError: error,
           );
       }
@@ -93,6 +96,26 @@ class ApiException implements Exception {
       message: '알 수 없는 오류가 발생했습니다.',
       originalError: error,
     );
+  }
+
+  /// VPN·프록시·SSL 검사(기업망) 등으로 [CERTIFICATE_VERIFY_FAILED]가 나는 경우 안내.
+  static String? _messageForTlsFailure(DioException error) {
+    final cause = error.error;
+    if (cause is HandshakeException) {
+      return '보안 연결(SSL)을 확인하지 못했습니다. VPN·HTTPS 가로채기 앱을 끄거나 다른 네트워크에서 다시 시도해 주세요.';
+    }
+    if (cause is TlsException) {
+      final os = cause.osError?.message ?? '';
+      if (os.contains('CERTIFICATE_VERIFY_FAILED')) {
+        return '서버 인증서 검증에 실패했습니다. 기기 날짜·시간이 맞는지, 중간 보안 프로그램이 없는지 확인해 주세요.';
+      }
+    }
+    final text = '${error.message ?? ''}${error.error ?? ''}';
+    if (text.contains('CERTIFICATE_VERIFY_FAILED') ||
+        text.contains('HandshakeException')) {
+      return '보안 연결(SSL)을 확인하지 못했습니다. VPN·프록시를 끄고 다시 시도해 주세요.';
+    }
+    return null;
   }
 }
 

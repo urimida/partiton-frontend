@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:partition_app/core/router/app_router.dart';
 import 'package:partition_app/core/storage/storage_service.dart';
@@ -299,10 +298,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     // 로고
                     const SizedBox(height: 100),
-                    SvgPicture.asset(
-                      'assets/icons/logo.svg',
+                    Image.asset(
+                      'assets/icons/partition-logo-mini.png',
                       width: 80,
                       height: 80,
+                      fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 20),
                     // partition 텍스트

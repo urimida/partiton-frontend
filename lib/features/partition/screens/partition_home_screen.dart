@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:partition_app/features/partition/providers/home_share_provider.dart';
@@ -164,10 +163,11 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const SizedBox(height: 0),
-            SvgPicture.asset(
-              'assets/icons/logo.svg',
+            Image.asset(
+              'assets/icons/partition-logo-mini.png',
               width: 80,
               height: 80,
+              fit: BoxFit.contain,
             ),
             const SizedBox(height: 26),
             SizedBox(
