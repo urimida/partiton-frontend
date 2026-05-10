@@ -296,23 +296,24 @@ class _LoginScreenState extends State<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // 로고
+                    // 로고 (기준 80px 대비 70%)
                     const SizedBox(height: 100),
                     Image.asset(
                       'assets/icons/partition-logo-mini.png',
-                      width: 80,
-                      height: 80,
+                      width: 56,
+                      height: 56,
                       fit: BoxFit.contain,
                     ),
                     const SizedBox(height: 20),
-                    // partition 텍스트
                     const Text(
-                      'PARTITION',
+                      '파티션: 말하지 않아도 되는 공동생활 관리',
+                      textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
                         fontFamily: 'Pretendard Variable',
+                        height: 1.35,
                       ),
                     ),
                     const SizedBox(height: 60),

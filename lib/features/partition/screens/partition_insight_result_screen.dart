@@ -95,12 +95,7 @@ class PartitionInsightResultScreen extends StatelessWidget {
           const SizedBox(height: 24),
           _sectionTitle('메타'),
           const SizedBox(height: 8),
-          _metaRow('모델', result.model),
           _metaRow('입력 방식', result.inputMode),
-          if (result.whisperModel != null)
-            _metaRow('Whisper', result.whisperModel!),
-          if (result.multimodalModel != null)
-            _metaRow('멀티모달', result.multimodalModel!),
         ],
       ),
     );

@@ -503,42 +503,39 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                   minimum: EdgeInsets.zero,
                   child: Align(
                     alignment: Alignment.center,
-                    child: Transform.translate(
-                      offset: const Offset(0, 10),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildNavItem(
-                              icon: _currentIndex == 0
-                                  ? Icons.calendar_today
-                                  : Icons.calendar_today_outlined,
-                              label: '홈',
-                              index: 0,
-                            ),
-                            _buildNavItem(
-                              icon: _currentIndex == 1
-                                  ? Icons.inventory_2
-                                  : Icons.inventory_2_outlined,
-                              label: '공용 소비',
-                              index: 1,
-                            ),
-                            _buildNavItem(
-                              icon: Icons.home,
-                              label: '파티션 리포트',
-                              index: 2,
-                            ),
-                            _buildNavItem(
-                              icon: Icons.notifications,
-                              label: '게시판',
-                              index: 3,
-                            ),
-                          ],
-                        ), // Row
-                    ), // Padding
-                  ), // Transform.translate
-                ), // Align
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildNavItem(
+                            icon: _currentIndex == 0
+                                ? Icons.calendar_today
+                                : Icons.calendar_today_outlined,
+                            label: '홈',
+                            index: 0,
+                          ),
+                          _buildNavItem(
+                            icon: _currentIndex == 1
+                                ? Icons.inventory_2
+                                : Icons.inventory_2_outlined,
+                            label: '공용 소비',
+                            index: 1,
+                          ),
+                          _buildNavItem(
+                            icon: Icons.home,
+                            label: '파티션 리포트',
+                            index: 2,
+                          ),
+                          _buildNavItem(
+                            icon: Icons.notifications,
+                            label: '게시판',
+                            index: 3,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ), // SafeArea
               ),
               // 알림 패널 내용 (패널이 열릴수록 나타남)

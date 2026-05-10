@@ -165,8 +165,8 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
             SizedBox(height: MediaQuery.paddingOf(context).top),
             Image.asset(
               'assets/icons/partition-logo-mini.png',
-              width: 56,
-              height: 56,
+              width: 56 * 0.7,
+              height: 56 * 0.7,
               fit: BoxFit.contain,
             ),
             const SizedBox(height: 26),

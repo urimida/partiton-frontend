@@ -448,10 +448,13 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 20),
         child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () {}, // 내부 클릭은 전파 방지
           child: Container(
             width: 350,
-            height: 323,
+            /// 드롭다운이 Stack 밖으로 그려지면 하단(선택 완료 등) 터치가
+            /// 다이얼로그 바리어로 떨어져 전체 모달이 닫힐 수 있음.
+            height: _isDropdownOpen ? 440 : 323,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
