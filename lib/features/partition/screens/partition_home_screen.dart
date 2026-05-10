@@ -148,10 +148,30 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
 
   // ── UI 빌드 ────────────────────────────────────────────────────────────────
 
+  /// 캘린더 높이를 콘텐츠 너비 기반으로 계산.
+  /// FrostedPanel 내부 패딩: 가로 28*2=56, 세로 24*2=48
+  /// 그리드: 6주 * 셀높이 (childAspectRatio 1:1, crossAxisSpacing 8 * 6칸)
+  /// 헤더 영역: 월 선택기(~40) + spacing(20) + 요일 레이블(~20) + spacing(12) ≈ 92
+  static double _calcCalendarHeight(double contentWidth) {
+    const double frostedH = 56.0; // 28 * 2
+    const double frostedV = 48.0; // 24 * 2
+    const double headerH = 92.0;
+    const double buffer = 16.0;
+    final double innerWidth = contentWidth - frostedH;
+    final double cellWidth = ((innerWidth - 6 * 8.0) / 7.0).clamp(28.0, double.infinity);
+    final double gridHeight = 6.0 * cellWidth;
+    return (gridHeight + headerH + frostedV + buffer).clamp(360.0, 600.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final buttonWidth = screenWidth - 32;
+
+    // 큰 화면에서도 모바일 레이아웃처럼 보이도록 최대 너비 제한 (가운데 정렬)
+    // SingleChildScrollView의 horizontal padding 16*2=32 를 이미 제외한 너비
+    const double maxContentWidth = 448.0; // 480 - 32(padding)
+    final double contentWidth = (screenWidth - 32.0).clamp(0.0, maxContentWidth);
+    final double calendarHeight = _calcCalendarHeight(contentWidth);
 
     return Container(
       width: double.infinity,
@@ -159,44 +179,49 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
       color: Colors.transparent,
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(height: 0),
-            SvgPicture.asset(
-              'assets/icons/logo.svg',
-              width: 80,
-              height: 80,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: maxContentWidth),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 0),
+                SvgPicture.asset(
+                  'assets/icons/logo.svg',
+                  width: 80,
+                  height: 80,
+                ),
+                const SizedBox(height: 26),
+                SizedBox(
+                  width: double.infinity,
+                  height: calendarHeight,
+                  child: HomeCalendarWidget(
+                    key: _calendarKey,
+                    onDateSelected: _onDateSelected,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                PrimaryButton(
+                  label: '일정 등록하기',
+                  width: contentWidth,
+                  onPressed: () => _showScheduleRegistrationModal(context),
+                ),
+                const SizedBox(height: 10),
+                PrimaryButton(
+                  label: '집안일 자동 배정',
+                  width: contentWidth,
+                  onPressed: () => _showChoreAssignmentModal(context),
+                ),
+                const SizedBox(height: 12),
+                _HomeShareCard(
+                  onToggle: () => _onToggleSharing(context),
+                  onEditLocation: () => _onEditHomeLocation(context),
+                ),
+                const SizedBox(height: 20),
+              ],
             ),
-            const SizedBox(height: 26),
-            SizedBox(
-              width: double.infinity,
-              height: 382,
-              child: HomeCalendarWidget(
-                key: _calendarKey,
-                onDateSelected: _onDateSelected,
-              ),
-            ),
-            const SizedBox(height: 10),
-            PrimaryButton(
-              label: '일정 등록하기',
-              width: buttonWidth,
-              onPressed: () => _showScheduleRegistrationModal(context),
-            ),
-            const SizedBox(height: 10),
-            PrimaryButton(
-              label: '집안일 자동 배정',
-              width: buttonWidth,
-              onPressed: () => _showChoreAssignmentModal(context),
-            ),
-            const SizedBox(height: 12),
-            _HomeShareCard(
-              onToggle: () => _onToggleSharing(context),
-              onEditLocation: () => _onEditHomeLocation(context),
-            ),
-            const SizedBox(height: 20),
-          ],
+          ),
         ),
       ),
     );
@@ -665,8 +690,8 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
   bool _locationLoading = false;
   bool _searchLoading = false;
   bool _addressLoading = false;
-  bool _addressLoadFailed = false;
   List<PlaceSuggestion> _suggestions = [];
+  bool _searchedOnce = false;
   String? _error;
   Timer? _debounce;
   bool _apiKeyMissing = false;
@@ -686,26 +711,12 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
   Future<void> _ensureAddressLoaded() async {
     final provider = context.read<HomeShareProvider>();
     if (provider.homeAddress == null && provider.homeLocation != null) {
-      setState(() {
-        _addressLoading = true;
-        _addressLoadFailed = false;
-      });
+      setState(() => _addressLoading = true);
       final loc = provider.homeLocation!;
       final address = await GeocodingService.reverseGeocode(loc.lat, loc.lng);
       if (!mounted) return;
-      if (address != null) {
-        await provider.updateHomeAddress(address);
-        setState(() => _addressLoading = false);
-      } else {
-        // 역지오코딩 실패 시 좌표 문자열로 표시
-        final fallback =
-            '${loc.lat.toStringAsFixed(5)}, ${loc.lng.toStringAsFixed(5)}';
-        await provider.updateHomeAddress(fallback);
-        setState(() {
-          _addressLoading = false;
-          _addressLoadFailed = true;
-        });
-      }
+      if (address != null) await provider.updateHomeAddress(address);
+      setState(() => _addressLoading = false);
     }
   }
 
@@ -723,12 +734,14 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
   Future<void> _search(String query) async {
     setState(() {
       _searchLoading = true;
+      _searchedOnce = true;
       _error = null;
     });
-    final results = await GeocodingService.searchPlaces(query);
+    final (:results, :error) = await GeocodingService.searchPlaces(query);
     if (!mounted) return;
     setState(() {
       _suggestions = results;
+      _error = error;
       _searchLoading = false;
     });
   }
@@ -773,6 +786,7 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
     final provider = context.watch<HomeShareProvider>();
     final homeAddress = provider.homeAddress;
     final hasHome = provider.homeLocation != null;
+    final hasAddress = homeAddress != null && homeAddress.isNotEmpty;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -781,398 +795,426 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
         borderRadius: BorderRadius.circular(24),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A2F42).withOpacity(0.92),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withOpacity(0.18)),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.75,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 헤더
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF6BA3FF).withOpacity(0.18),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.home_rounded,
-                        color: Color(0xFF6BA3FF),
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        '집 위치 변경',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          decoration: TextDecoration.none,
-                        ),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).pop(false),
-                      child: Icon(
-                        Icons.close_rounded,
-                        color: Colors.white.withOpacity(0.45),
-                        size: 22,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // 현재 설정 주소
-                if (hasHome) ...[
-                  Text(
-                    '현재 설정된 집 주소',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                      fontSize: 12,
-                      decoration: TextDecoration.none,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: _addressLoadFailed
-                          ? Colors.white.withOpacity(0.06)
-                          : const Color(0xFF6BA3FF).withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _addressLoadFailed
-                            ? Colors.white.withOpacity(0.12)
-                            : const Color(0xFF6BA3FF).withOpacity(0.3),
-                      ),
-                    ),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A2F42).withOpacity(0.92),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withOpacity(0.18)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 헤더 (고정)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
                     child: Row(
                       children: [
-                        if (_addressLoading)
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white.withOpacity(0.5),
-                            ),
-                          )
-                        else
-                          Icon(
-                            _addressLoadFailed
-                                ? Icons.location_searching_rounded
-                                : Icons.location_on_rounded,
-                            color: _addressLoadFailed
-                                ? Colors.white.withOpacity(0.35)
-                                : const Color(0xFF6BA3FF),
-                            size: 18,
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6BA3FF).withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _addressLoading
-                              ? Text(
-                                  '주소 불러오는 중...',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.45),
-                                    fontSize: 13,
-                                    fontStyle: FontStyle.italic,
-                                    decoration: TextDecoration.none,
-                                  ),
-                                )
-                              : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      homeAddress ?? '-',
-                                      style: TextStyle(
-                                        color: _addressLoadFailed
-                                            ? Colors.white.withOpacity(0.55)
-                                            : Colors.white.withOpacity(0.88),
-                                        fontSize: 13,
-                                        decoration: TextDecoration.none,
-                                      ),
-                                    ),
-                                    if (_addressLoadFailed) ...[
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        '주소 변환 실패 — 검색으로 직접 입력해주세요',
-                                        style: TextStyle(
-                                          color:
-                                              Colors.orange.withOpacity(0.75),
-                                          fontSize: 11,
-                                          decoration: TextDecoration.none,
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
+                          child: const Icon(
+                            Icons.home_rounded,
+                            color: Color(0xFF6BA3FF),
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            '집 위치 변경',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).pop(false),
+                          child: Icon(
+                            Icons.close_rounded,
+                            color: Colors.white.withOpacity(0.45),
+                            size: 22,
+                          ),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
-                ],
 
-                // 현재 위치로 설정 버튼
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _locationLoading ? null : _onUseCurrentLocation,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6BA3FF),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 0,
-                    ),
-                    icon: _locationLoading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Icon(Icons.my_location_rounded, size: 16),
-                    label: Text(
-                      _locationLoading ? '위치 가져오는 중...' : '현재 위치로 설정',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.none,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // 구분선
-                Row(
-                  children: [
-                    Expanded(
-                        child: Divider(color: Colors.white.withOpacity(0.15))),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        '또는 주소 검색',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.4),
-                          fontSize: 12,
-                          decoration: TextDecoration.none,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                        child: Divider(color: Colors.white.withOpacity(0.15))),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // 검색 입력창
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.07),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withOpacity(0.15)),
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    style: TextStyle(
-                        color: Colors.white.withOpacity(0.9), fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: _apiKeyMissing
-                          ? '카카오 REST API 키 설정 후 사용 가능'
-                          : '장소 또는 주소를 검색하세요',
-                      hintStyle: TextStyle(
-                        color: Colors.white.withOpacity(0.3),
-                        fontSize: 14,
-                        decoration: TextDecoration.none,
-                      ),
-                      prefixIcon: Icon(
-                        Icons.search_rounded,
-                        color: Colors.white.withOpacity(0.38),
-                        size: 20,
-                      ),
-                      suffixIcon: _searchLoading
-                          ? Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white.withOpacity(0.4),
+                  // 스크롤 가능한 본문
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 현재 설정 주소
+                          if (hasHome) ...[
+                            Text(
+                              '현재 설정된 집 주소',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.5),
+                                fontSize: 12,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: hasAddress
+                                    ? const Color(0xFF6BA3FF).withOpacity(0.12)
+                                    : Colors.white.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: hasAddress
+                                      ? const Color(0xFF6BA3FF).withOpacity(0.3)
+                                      : Colors.white.withOpacity(0.12),
                                 ),
                               ),
-                            )
-                          : _searchController.text.isNotEmpty
-                              ? GestureDetector(
-                                  onTap: () {
-                                    _searchController.clear();
-                                    setState(() => _suggestions = []);
-                                  },
-                                  child: Icon(
-                                    Icons.close_rounded,
-                                    size: 18,
-                                    color: Colors.white.withOpacity(0.35),
+                              child: Row(
+                                children: [
+                                  if (_addressLoading)
+                                    SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white.withOpacity(0.5),
+                                      ),
+                                    )
+                                  else
+                                    Icon(
+                                      hasAddress
+                                          ? Icons.location_on_rounded
+                                          : Icons.location_searching_rounded,
+                                      color: hasAddress
+                                          ? const Color(0xFF6BA3FF)
+                                          : Colors.white.withOpacity(0.35),
+                                      size: 18,
+                                    ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: _addressLoading
+                                        ? Text(
+                                            '주소 불러오는 중...',
+                                            style: TextStyle(
+                                              color:
+                                                  Colors.white.withOpacity(0.45),
+                                              fontSize: 13,
+                                              fontStyle: FontStyle.italic,
+                                              decoration: TextDecoration.none,
+                                            ),
+                                          )
+                                        : hasAddress
+                                            ? Text(
+                                                homeAddress,
+                                                style: TextStyle(
+                                                  color: Colors.white
+                                                      .withOpacity(0.88),
+                                                  fontSize: 13,
+                                                  decoration:
+                                                      TextDecoration.none,
+                                                ),
+                                              )
+                                            : Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    '주소 정보 없음',
+                                                    style: TextStyle(
+                                                      color: Colors.white
+                                                          .withOpacity(0.55),
+                                                      fontSize: 13,
+                                                      decoration:
+                                                          TextDecoration.none,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 3),
+                                                  Text(
+                                                    '아래 검색으로 집 주소를 등록해주세요',
+                                                    style: TextStyle(
+                                                      color: Colors.orange
+                                                          .withOpacity(0.75),
+                                                      fontSize: 11,
+                                                      decoration:
+                                                          TextDecoration.none,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
                                   ),
-                                )
-                              : null,
-                      border: InputBorder.none,
-                      contentPadding:
-                          const EdgeInsets.symmetric(vertical: 13),
-                      enabled: !_apiKeyMissing,
-                    ),
-                  ),
-                ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                          ],
 
-                // API 키 안내
-                if (_apiKeyMissing) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.orange.withOpacity(0.25)),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.info_outline_rounded,
-                            size: 14,
-                            color: Colors.orange.withOpacity(0.8)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'app_config.dart의 kakaoRestApiKey에\n카카오 REST API 키를 입력하면 주소 검색을 사용할 수 있어요.',
-                            style: TextStyle(
-                              color: Colors.orange.withOpacity(0.8),
-                              fontSize: 11,
-                              height: 1.5,
-                              decoration: TextDecoration.none,
+                          // 현재 위치로 설정 버튼
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed:
+                                  _locationLoading ? null : _onUseCurrentLocation,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6BA3FF),
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                elevation: 0,
+                              ),
+                              icon: _locationLoading
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Icon(Icons.my_location_rounded,
+                                      size: 16),
+                              label: Text(
+                                _locationLoading
+                                    ? '위치 가져오는 중...'
+                                    : '현재 위치로 설정',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  decoration: TextDecoration.none,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                          const SizedBox(height: 16),
 
-                // 에러 메시지
-                if (_error != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF8B2942).withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(
-                        color: Colors.red.shade300,
-                        fontSize: 12,
-                        decoration: TextDecoration.none,
-                      ),
-                    ),
-                  ),
-                ],
-
-                // 검색 결과
-                if (_suggestions.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 200),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.06),
-                      borderRadius: BorderRadius.circular(12),
-                      border:
-                          Border.all(color: Colors.white.withOpacity(0.12)),
-                    ),
-                    child: ListView.separated(
-                      padding: EdgeInsets.zero,
-                      shrinkWrap: true,
-                      itemCount: _suggestions.length,
-                      separatorBuilder: (_, __) => Divider(
-                        height: 1,
-                        color: Colors.white.withOpacity(0.08),
-                      ),
-                      itemBuilder: (context, index) {
-                        final place = _suggestions[index];
-                        return InkWell(
-                          onTap: () => _onSelectPlace(place),
-                          borderRadius: index == 0
-                              ? const BorderRadius.vertical(
-                                  top: Radius.circular(12))
-                              : index == _suggestions.length - 1
-                                  ? const BorderRadius.vertical(
-                                      bottom: Radius.circular(12))
-                                  : BorderRadius.zero,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 11),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.location_on_outlined,
-                                  size: 16,
-                                  color: Colors.white.withOpacity(0.4),
+                          // 구분선
+                          Row(
+                            children: [
+                              Expanded(
+                                  child: Divider(
+                                      color: Colors.white.withOpacity(0.15))),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                                child: Text(
+                                  '또는 주소 검색',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.4),
+                                    fontSize: 12,
+                                    decoration: TextDecoration.none,
+                                  ),
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        place.mainText,
-                                        style: TextStyle(
-                                          color:
-                                              Colors.white.withOpacity(0.9),
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                          decoration: TextDecoration.none,
-                                        ),
-                                      ),
-                                      if (place.secondaryText.isNotEmpty) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          place.secondaryText,
-                                          style: TextStyle(
+                              ),
+                              Expanded(
+                                  child: Divider(
+                                      color: Colors.white.withOpacity(0.15))),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // 검색 입력창
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.07),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: Colors.white.withOpacity(0.15)),
+                            ),
+                            child: TextField(
+                              controller: _searchController,
+                              style: TextStyle(
+                                  color: Colors.white.withOpacity(0.9),
+                                  fontSize: 14),
+                              decoration: InputDecoration(
+                                hintText: _apiKeyMissing
+                                    ? '카카오 REST API 키 설정 후 사용 가능'
+                                    : '장소 또는 주소를 검색하세요',
+                                hintStyle: TextStyle(
+                                  color: Colors.white.withOpacity(0.3),
+                                  fontSize: 14,
+                                  decoration: TextDecoration.none,
+                                ),
+                                prefixIcon: Icon(
+                                  Icons.search_rounded,
+                                  color: Colors.white.withOpacity(0.38),
+                                  size: 20,
+                                ),
+                                suffixIcon: _searchLoading
+                                    ? Padding(
+                                        padding: const EdgeInsets.all(12),
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
                                             color:
-                                                Colors.white.withOpacity(0.45),
-                                            fontSize: 11,
-                                            decoration: TextDecoration.none,
+                                                Colors.white.withOpacity(0.4),
                                           ),
                                         ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ],
+                                      )
+                                    : _searchController.text.isNotEmpty
+                                        ? GestureDetector(
+                                            onTap: () {
+                                              _searchController.clear();
+                                              setState(() {
+                                                _suggestions = [];
+                                                _searchedOnce = false;
+                                              });
+                                            },
+                                            child: Icon(
+                                              Icons.close_rounded,
+                                              size: 18,
+                                              color: Colors.white
+                                                  .withOpacity(0.35),
+                                            ),
+                                          )
+                                        : null,
+                                border: InputBorder.none,
+                                contentPadding:
+                                    const EdgeInsets.symmetric(vertical: 13),
+                                enabled: !_apiKeyMissing,
+                              ),
                             ),
                           ),
-                        );
-                      },
+
+                          // 에러 메시지
+                          if (_error != null) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF8B2942).withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                _error!,
+                                style: TextStyle(
+                                  color: Colors.red.shade300,
+                                  fontSize: 12,
+                                  decoration: TextDecoration.none,
+                                ),
+                              ),
+                            ),
+                          ],
+
+                          // 검색 결과
+                          if (_suggestions.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.06),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: Colors.white.withOpacity(0.12)),
+                                ),
+                                child: ListView.separated(
+                                  padding: EdgeInsets.zero,
+                                  shrinkWrap: true,
+                                  physics:
+                                      const NeverScrollableScrollPhysics(),
+                                  itemCount: _suggestions.length,
+                                  separatorBuilder: (_, __) => Divider(
+                                    height: 1,
+                                    color: Colors.white.withOpacity(0.08),
+                                  ),
+                                  itemBuilder: (context, index) {
+                                    final place = _suggestions[index];
+                                    return InkWell(
+                                      onTap: () => _onSelectPlace(place),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 14, vertical: 12),
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.location_on_rounded,
+                                              size: 16,
+                                              color: const Color(0xFF6BA3FF)
+                                                  .withOpacity(0.7),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    place.mainText,
+                                                    style: TextStyle(
+                                                      color: Colors.white
+                                                          .withOpacity(0.92),
+                                                      fontSize: 13,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      decoration:
+                                                          TextDecoration.none,
+                                                    ),
+                                                  ),
+                                                  if (place.secondaryText
+                                                      .isNotEmpty) ...[
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      place.secondaryText,
+                                                      style: TextStyle(
+                                                        color: Colors.white
+                                                            .withOpacity(0.45),
+                                                        fontSize: 11,
+                                                        decoration:
+                                                            TextDecoration.none,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ] else if (_searchedOnce &&
+                              !_searchLoading &&
+                              _error == null &&
+                              _searchController.text.isNotEmpty) ...[
+                            // 검색 결과 없음
+                            const SizedBox(height: 12),
+                            Center(
+                              child: Text(
+                                '검색 결과가 없어요',
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.4),
+                                  fontSize: 13,
+                                  decoration: TextDecoration.none,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                 ],
-              ],
+              ),
             ),
           ),
         ),

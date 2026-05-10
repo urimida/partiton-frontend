@@ -123,12 +123,13 @@ class HomeShareProvider extends ChangeNotifier {
         _defaultRadius,
       );
 
-      // 역지오코딩으로 주소 저장 (실패 시 좌표 문자열로 대체)
+      // 역지오코딩으로 주소 저장 (실패 시 null 유지 — 다이얼로그에서 검색 유도)
       final address =
           await GeocodingService.reverseGeocode(pos.latitude, pos.longitude);
-      _homeAddress = address ??
-          '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
-      await StorageService.setHomeAddress(_homeAddress!);
+      if (address != null) {
+        _homeAddress = address;
+        await StorageService.setHomeAddress(address);
+      }
 
       // 서버에도 저장 (실패해도 로컬 기능은 동작)
       _service
