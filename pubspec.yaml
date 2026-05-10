@@ -66,6 +66,7 @@ flutter:
   assets:
     - assets/images/background.png
     - assets/images/Bottom-bar-bg.png
+    - assets/images/kakao_login_medium_wide.png
     - assets/icons/
     - assets/fonts/
   
