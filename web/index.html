@@ -19,15 +19,17 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
-  <!-- 모바일 Safari 주소줄·상단 여백: 흰색 대신 앱 배경과 맞춤 -->
+  <!-- 모바일 브라우저 UI·안드로이드 상단 바 틴트 (사파리 컴팩트 모드 등) -->
+  <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#060F18" media="(prefers-color-scheme: dark)">
-  <meta name="theme-color" content="#0B1520">
+  <meta name="theme-color" content="#060F18" media="(prefers-color-scheme: light)">
   <meta name="description" content="A new Flutter project.">
   <!-- 마이크(음성 질문)·카메라(영수증 등) — 브라우저가 동일 출처에서 권한 요청할 수 있게 허용 (HTTPS 또는 localhost 필요) -->
   <meta http-equiv="Permissions-Policy" content="microphone=(self), camera=(self)">
 
-  <!-- iOS meta tags & icons -->
+  <!-- iOS: 홈 화면 추가 시 전체화면 + viewport-fit=cover 시 콘텐츠가 상태줄 아래까지 이어지게 -->
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="partition_app">
   <link rel="apple-touch-icon" href="partition-logo.png">
@@ -38,17 +40,39 @@
   <title>partition_app</title>
   <link rel="manifest" href="manifest.json">
   <style>
-    html, body {
+    :root {
+      color-scheme: dark;
+    }
+    html {
       margin: 0;
       padding: 0;
       width: 100%;
       height: 100%;
+      height: -webkit-fill-available;
       background-color: #060F18;
     }
-    /* Flutter Web 캔버스 바깥(특히 iOS 노치 상단)에 기본 흰 배경이 보이지 않게 */
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      min-height: 100%;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+      overscroll-behavior: none;
+      background-color: #060F18;
+    }
+    /* Flutter Web 캔버스 바깥(특히 iOS 노치·홈 인디케이터)에 기본 흰 배경이 보이지 않게 */
     flt-scene-host, flutter-view,
     flt-glass-pane, flt-semantics-placeholder {
       background-color: transparent;
+    }
+    /* iOS Safari: 뷰포트를 물리 화면 높이에 최대한 맞춤 (viewport-fit=cover와 함께) */
+    flutter-view, flt-glass-pane {
+      width: 100%;
+      min-height: 100%;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
     }
   </style>
 </head>

@@ -32,7 +32,9 @@ class AppConfig {
   static const String alarmsEndpoint = '/alarms';
   /// 특정 알림 읽음 (PATCH)
   static String alarmsReadPath(int alarmId) => '/alarms/$alarmId/read';
-  /// 집안일 완료 여부 수정 (일간 캘린더의 chore id)
+  /// 집안일 완료 처리 (`PATCH`, Path Variable `choreId`, 본문 없음)
+  static const String choreCompleteEndpoint = '/chores/{choreId}/complete';
+  /// 집안일 완료 해제 등 (본문 `{ isCompleted: false }`) — 백엔드 명세에 따라 유지·변경
   static const String choreDetailEndpoint = '/chores/{choreId}';
   /// 공동 구매(공용 소비) 물품 카테고리 — household 생성 시 시드된 대·소분류
   static const String suppliesCategoriesEndpoint = '/supplies/categories';

@@ -51,21 +51,30 @@ class ChoreService {
     }
   }
 
-  /// 집안일 완료 처리 (체크)
-  /// - PATCH /api/chores/{choreId}
-  /// - Body: { isCompleted: true | false }
+  /// 집안일 완료·미완료 토글 (일간 캘린더)
+  /// - 완료: PATCH /api/chores/{choreId}/complete (본문 없음)
+  /// - 미완료: PATCH /api/chores/{choreId} … `{ "isCompleted": false }`
   Future<ScheduleResponseModel> updateChoreCompletion({
     required int choreId,
     required bool isCompleted,
   }) async {
     try {
+      if (isCompleted) {
+        final endpoint = AppConfig.choreCompleteEndpoint.replaceAll(
+          '{choreId}',
+          choreId.toString(),
+        );
+        final response = await _apiClient.patch(endpoint);
+        return ScheduleResponseModel.fromJson(response.data);
+      }
+
       final endpoint = AppConfig.choreDetailEndpoint.replaceAll(
         '{choreId}',
         choreId.toString(),
       );
       final response = await _apiClient.patch(
         endpoint,
-        data: {'isCompleted': isCompleted},
+        data: {'isCompleted': false},
       );
       return ScheduleResponseModel.fromJson(response.data);
     } catch (e) {
