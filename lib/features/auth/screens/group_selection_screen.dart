@@ -30,15 +30,27 @@ class _GroupSelectionScreenState extends State<GroupSelectionScreen> {
     }
   }
 
+  /// 이미 그룹에 속해 있으면 홈으로 이동하고 true 반환, 아니면 false 반환
+  Future<bool> _redirectIfAlreadyInGroup() async {
+    final householdId = await StorageService.getHouseholdId();
+    if (householdId != null && householdId.isNotEmpty) {
+      if (mounted) {
+        Navigator.of(context).pushReplacementNamed(AppRouter.partitionMain);
+      }
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _handleEnterGroupCode() async {
-    // 그룹 코드 입력 화면으로 이동
+    if (await _redirectIfAlreadyInGroup()) return;
     if (mounted) {
       Navigator.of(context).pushNamed(AppRouter.enterGroupCode);
     }
   }
 
   Future<void> _handleCreateNewGroup() async {
-    // 새 그룹 만들기 화면으로 이동
+    if (await _redirectIfAlreadyInGroup()) return;
     if (mounted) {
       Navigator.of(context).pushNamed(AppRouter.createGroup);
     }
