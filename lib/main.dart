@@ -175,13 +175,42 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   /// 사용자 상태에 따라 적절한 라우트 반환
+  ///
+  /// 웹에서 새로고침 시에도 로그인된 사용자가 안정적으로 홈으로 이동하도록
+  /// "그룹(가구) 소속 여부"를 가장 우선 검사한다.
+  /// 카카오 로그인으로 LEADER/MEMBER가 곧장 홈으로 이동하는 경우
+  /// 로컬 SharedPreferences에는 userName/householdId가 저장되지 않을 수 있는데,
+  /// 이때 새로고침으로 닉네임만 보고 온보딩으로 잘못 보내는 문제를 막는다.
   Future<String> _getTargetRoute() async {
     final authService = AuthService();
-    
-    // 로컬 토큰·저장소 기반 세션 사용자 (GET /users/me 미사용)
-    final userInfo = await authService.getUserInfo();
 
-    // 1. 닉네임 확인 (세션 모델·로컬 스토리지)
+    // 1. 그룹(가구) 확인 — 로컬 우선, 없으면 서버에서 조회
+    //    가구에 속해 있다는 것 자체가 "정상 온보딩 완료 사용자"라는 뜻.
+    String? householdId = await StorageService.getHouseholdId();
+    if (householdId == null || householdId.isEmpty) {
+      final household = await authService.fetchMyHousehold();
+      if (household != null &&
+          household.isSuccess &&
+          household.result?.id != null) {
+        householdId = household.result!.id.toString();
+        await StorageService.setHouseholdId(householdId);
+      }
+    }
+
+    // 2. 그룹이 있으면 홈으로 이동 (닉네임이 로컬에 없어도 홈 진입 후 채워짐)
+    if (householdId != null && householdId.isNotEmpty) {
+      // 닉네임 fallback 저장 (있으면)
+      final userInfo = await authService.getUserInfo();
+      final name = userInfo?.name;
+      if (name != null && name.isNotEmpty) {
+        await StorageService.setUserName(name);
+      }
+      await StorageService.setOnboardingCompleted(true);
+      return AppRouter.partitionMain;
+    }
+
+    // 3. 그룹이 없는 신규 사용자 → 닉네임 → 그룹 선택 순으로 온보딩
+    final userInfo = await authService.getUserInfo();
     String? userName = userInfo?.name;
     if (userName == null || userName.isEmpty) {
       userName = await StorageService.getUserName();
@@ -192,26 +221,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       await StorageService.setUserName(userName);
     }
 
-    // 2. 그룹(가구) 확인 — 로컬 우선, 없으면 서버에서 조회
-    String? householdId = await StorageService.getHouseholdId();
-    if (householdId == null || householdId.isEmpty) {
-      // 로컬에 없을 때 서버에서 그룹 정보 fallback 조회
-      final household = await authService.fetchMyHousehold();
-      if (household != null &&
-          household.isSuccess &&
-          household.result?.id != null) {
-        householdId = household.result!.id.toString();
-        await StorageService.setHouseholdId(householdId);
-      }
-    }
-    if (householdId == null || householdId.isEmpty) {
-      return AppRouter.groupSelection; // 그룹 선택 화면
-    }
-
-    // 그룹에 이미 속해있으면 온보딩 완료로 간주하고 홈으로 이동
-    // (onboarding_completed 플래그가 유실된 경우에도 홈으로 정상 이동)
-    await StorageService.setOnboardingCompleted(true);
-    return AppRouter.partitionMain;
+    return AppRouter.groupSelection; // 그룹 선택 화면
   }
 
   @override

@@ -18,13 +18,38 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   bool _isKakaoLoginLoading = false;
 
-  /// 사용자 상태에 따라 적절한 라우트 반환
+  /// 사용자 상태에 따라 적절한 라우트 반환.
+  ///
+  /// 그룹(가구)에 이미 속한 사용자는 닉네임/온보딩 플래그가 로컬에 없어도
+  /// 곧장 홈으로 이동하도록, 가구 소속 여부를 가장 먼저 확인한다.
   Future<String> _getTargetRoute() async {
     final authService = AuthService();
-    
-    final userInfo = await authService.getUserInfo();
 
-    // 1. 닉네임 확인 (세션 모델·로컬 스토리지)
+    // 1. 그룹(가구) 확인 — 로컬 우선, 없으면 서버에서 조회
+    String? householdId = await StorageService.getHouseholdId();
+    if (householdId == null || householdId.isEmpty) {
+      final household = await authService.fetchMyHousehold();
+      if (household != null &&
+          household.isSuccess &&
+          household.result?.id != null) {
+        householdId = household.result!.id.toString();
+        await StorageService.setHouseholdId(householdId);
+      }
+    }
+
+    if (householdId != null && householdId.isNotEmpty) {
+      // 닉네임 fallback 저장
+      final userInfo = await authService.getUserInfo();
+      final name = userInfo?.name;
+      if (name != null && name.isNotEmpty) {
+        await StorageService.setUserName(name);
+      }
+      await StorageService.setOnboardingCompleted(true);
+      return AppRouter.partitionMain;
+    }
+
+    // 2. 그룹이 없는 신규 사용자 → 닉네임 → 그룹 선택 순으로 온보딩
+    final userInfo = await authService.getUserInfo();
     String? userName = userInfo?.name;
     if (userName == null || userName.isEmpty) {
       userName = await StorageService.getUserName();
@@ -35,20 +60,7 @@ class _LoginScreenState extends State<LoginScreen> {
       await StorageService.setUserName(userName);
     }
 
-    // 2. 그룹(가구) 확인
-    final householdId = await StorageService.getHouseholdId();
-    if (householdId == null || householdId.isEmpty) {
-      return AppRouter.groupSelection; // 그룹 선택 화면
-    }
-
-    // 3. 선호도 입력 완료 여부 확인
-    final isOnboardingCompleted = await StorageService.isOnboardingCompleted();
-    if (!isOnboardingCompleted) {
-      return AppRouter.preferenceSurvey; // 선호도 설문 화면
-    }
-
-    // 모든 설정이 완료된 경우 홈으로 이동
-    return AppRouter.partitionMain;
+    return AppRouter.groupSelection; // 그룹 선택 화면
   }
 
   Future<void> _handleKakaoLogin() async {
