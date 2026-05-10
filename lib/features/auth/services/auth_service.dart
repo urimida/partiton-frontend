@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:partition_app/core/config/app_config.dart';
 import 'package:partition_app/core/network/api_client.dart';
 import 'package:partition_app/core/network/api_exception.dart';
@@ -201,6 +202,27 @@ class AuthService {
       return PreferenceResponseModel.fromJson(response.data);
     } catch (e) {
       throw ApiException.fromDioError(e);
+    }
+  }
+
+  /// 현재 로그인한 사용자의 그룹(가구) 정보를 서버에서 조회합니다.
+  /// 그룹에 속하지 않았거나 요청 실패 시 null 반환.
+  Future<HouseholdResponseModel?> fetchMyHousehold() async {
+    try {
+      final response = await _apiClient.get(
+        AppConfig.householdsEndpoint,
+        options: Options(
+          validateStatus: (status) =>
+              status != null && (status == 200 || status == 404 || status == 400),
+        ),
+      );
+      if (response.statusCode != 200) return null;
+      if (response.data is! Map<String, dynamic>) return null;
+      return HouseholdResponseModel.fromJson(
+          response.data as Map<String, dynamic>);
+    } catch (e) {
+      debugPrint('[AuthService] fetchMyHousehold 실패: $e');
+      return null;
     }
   }
 

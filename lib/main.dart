@@ -16,8 +16,8 @@ import 'package:partition_app/features/auth/providers/auth_provider.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 
 /// 화면 너비가 이 값을 초과하면 세로형 폰 프레임으로 중앙에 배치
-const double _kPhoneFrameBreakpoint = 480.0;
-const double _kPhoneFrameWidth = 430.0;
+const double _kPhoneFrameBreakpoint = 800.0;
+const double _kPhoneFrameWidth = 730.0;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -181,8 +181,18 @@ class _AuthWrapperState extends State<AuthWrapper> {
       await StorageService.setUserName(userName);
     }
 
-    // 2. 그룹(가구) 확인
-    final householdId = await StorageService.getHouseholdId();
+    // 2. 그룹(가구) 확인 — 로컬 우선, 없으면 서버에서 조회
+    String? householdId = await StorageService.getHouseholdId();
+    if (householdId == null || householdId.isEmpty) {
+      // 로컬에 없을 때 서버에서 그룹 정보 fallback 조회
+      final household = await authService.fetchMyHousehold();
+      if (household != null &&
+          household.isSuccess &&
+          household.result?.id != null) {
+        householdId = household.result!.id.toString();
+        await StorageService.setHouseholdId(householdId);
+      }
+    }
     if (householdId == null || householdId.isEmpty) {
       return AppRouter.groupSelection; // 그룹 선택 화면
     }
