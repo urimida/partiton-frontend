@@ -728,66 +728,104 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
             ? '정산번호 ${item.referenceId} · ${_formatAlarmTime(item.createdAt)}'
             : _formatAlarmTime(item.createdAt);
         final read = item.isRead;
-        return Material(
-          color:
-              read ? _alarmReadRowFill : Colors.white.withOpacity(0.06),
+        return ClipRRect(
           borderRadius: BorderRadius.circular(14),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => unawaited(_onAlarmRowTapped(item)),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (!item.isRead)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, right: 10),
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: _alarmMarkReadBusy.contains(item.alarmId)
-                              ? Colors.white.withOpacity(0.35)
-                              : const Color(0xFF6BA3FF),
-                          shape: BoxShape.circle,
+          child: Dismissible(
+            key: ValueKey<int>(item.alarmId),
+            direction: DismissDirection.endToStart,
+            confirmDismiss: (direction) async {
+              try {
+                await _alarmService.deleteAlarm(item.alarmId);
+                return true;
+              } catch (e) {
+                if (!mounted) return false;
+                final msg =
+                    e is ApiException ? e.message : '알림을 삭제하지 못했습니다.';
+                _showAlarmApiFeedback(msg, isError: true);
+                return false;
+              }
+            },
+            onDismissed: (_) {
+              if (!mounted) return;
+              setState(() {
+                _alarms.removeWhere((a) => a.alarmId == item.alarmId);
+                _alarmMarkReadBusy.remove(item.alarmId);
+                if (!item.isRead && _alarmUnreadCount > 0) {
+                  _alarmUnreadCount = _alarmUnreadCount - 1;
+                }
+              });
+            },
+            background: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 20),
+              color: const Color(0xFF8B2942),
+              child: Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.white.withOpacity(0.92),
+                size: 26,
+              ),
+            ),
+            child: Material(
+              color:
+                  read ? _alarmReadRowFill : Colors.white.withOpacity(0.06),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => unawaited(_onAlarmRowTapped(item)),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (!item.isRead)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6, right: 10),
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: _alarmMarkReadBusy.contains(item.alarmId)
+                                  ? Colors.white.withOpacity(0.35)
+                                  : const Color(0xFF6BA3FF),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        )
+                      else
+                        const SizedBox(width: 18),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.displayMessage,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(
+                                    read ? 0.72 : 0.96),
+                                fontSize: 15,
+                                fontWeight:
+                                    read ? FontWeight.w400 : FontWeight.w600,
+                                height: 1.35,
+                                decoration: TextDecoration.none,
+                                decorationColor: Colors.transparent,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              subLine,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(
+                                    read ? 0.32 : 0.4),
+                                fontSize: 12,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    )
-                  else
-                    const SizedBox(width: 18),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.displayMessage,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(
-                                read ? 0.72 : 0.96),
-                            fontSize: 15,
-                            fontWeight:
-                                read ? FontWeight.w400 : FontWeight.w600,
-                            height: 1.35,
-                            decoration: TextDecoration.none,
-                            decorationColor: Colors.transparent,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subLine,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(
-                                read ? 0.32 : 0.4),
-                            fontSize: 12,
-                            decoration: TextDecoration.none,
-                          ),
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),

@@ -4,7 +4,7 @@ import 'package:partition_app/core/network/api_client.dart';
 import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/features/partition/models/alarm_model.dart';
 
-/// 알림 API — `GET /api/alarms`, 읽음 `PATCH /api/alarms/{alarmId}/read`
+/// 알림 API — `GET /api/alarms`, 읽음 `PATCH /alarms/{id}/read`, 삭제 `DELETE /alarms/{id}`
 class AlarmService {
   final ApiClient _apiClient = ApiClient();
 
@@ -73,6 +73,25 @@ class AlarmService {
       if (data['isSuccess'] != true) {
         throw ApiException(
           message: data['message']?.toString() ?? '알림 읽음 처리에 실패했습니다.',
+        );
+      }
+    } on DioException catch (e) {
+      throw ApiException.fromDioError(e);
+    }
+  }
+
+  /// DELETE `/alarms/{alarmId}`
+  Future<void> deleteAlarm(int alarmId) async {
+    try {
+      final response =
+          await _apiClient.delete(AppConfig.alarmsItemPath(alarmId));
+      final data = response.data;
+      if (data == null) return;
+      if (data is String && data.isEmpty) return;
+      if (data is! Map<String, dynamic>) return;
+      if (data['isSuccess'] != true) {
+        throw ApiException(
+          message: data['message']?.toString() ?? '알림 삭제에 실패했습니다.',
         );
       }
     } on DioException catch (e) {
