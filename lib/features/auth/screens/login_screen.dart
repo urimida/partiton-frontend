@@ -20,12 +20,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// 사용자 상태에 따라 적절한 라우트 반환.
   ///
-  /// 그룹(가구)에 이미 속한 사용자는 닉네임/온보딩 플래그가 로컬에 없어도
-  /// 곧장 홈으로 이동하도록, 가구 소속 여부를 가장 먼저 확인한다.
+  /// 새로고침 시 main.dart의 [_AuthWrapper]와 동일한 우선순위를 사용한다:
+  /// userRole(LEADER/MEMBER) → household 존재 → onboarding_completed 플래그 → 닉네임/그룹.
   Future<String> _getTargetRoute() async {
     final authService = AuthService();
 
-    // 1. 그룹(가구) 확인 — 로컬 우선, 없으면 서버에서 조회
+    final storedRole = StorageService.getUserRole();
+    if (storedRole == 'LEADER' || storedRole == 'MEMBER') {
+      await StorageService.setOnboardingCompleted(true);
+      return AppRouter.partitionMain;
+    }
+
     String? householdId = await StorageService.getHouseholdId();
     if (householdId == null || householdId.isEmpty) {
       final household = await authService.fetchMyHousehold();
@@ -38,7 +43,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     if (householdId != null && householdId.isNotEmpty) {
-      // 닉네임 fallback 저장
       final userInfo = await authService.getUserInfo();
       final name = userInfo?.name;
       if (name != null && name.isNotEmpty) {
@@ -48,7 +52,15 @@ class _LoginScreenState extends State<LoginScreen> {
       return AppRouter.partitionMain;
     }
 
-    // 2. 그룹이 없는 신규 사용자 → 닉네임 → 그룹 선택 순으로 온보딩
+    final onboardingDone = await StorageService.isOnboardingCompleted();
+    if (onboardingDone) {
+      return AppRouter.partitionMain;
+    }
+
+    if (storedRole == 'GUEST') {
+      return AppRouter.onboardingSurvey;
+    }
+
     final userInfo = await authService.getUserInfo();
     String? userName = userInfo?.name;
     if (userName == null || userName.isEmpty) {
@@ -108,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
           DebugHelper.log('이메일 검증 여부: ${user.kakaoAccount!.isEmailVerified}');
           DebugHelper.log('카카오 계정 전체: ${user.kakaoAccount}');
         } else {
-          DebugHelper.log('⚠️⚠️⚠️ kakaoAccount가 null입니다! ⚠️⚠️⚠️');
+          DebugHelper.log(' kakaoAccount가 null입니다!');
           DebugHelper.log('이것은 카카오 계정 정보를 전혀 받아오지 못했다는 의미입니다.');
           DebugHelper.log('');
           DebugHelper.log('해결 방법:');
@@ -195,7 +207,27 @@ class _LoginScreenState extends State<LoginScreen> {
           // userRole에 따라 적절한 화면으로 이동
           String targetRoute;
           if (result.userRole == 'LEADER' || result.userRole == 'MEMBER') {
-            // LEADER 또는 MEMBER인 경우 홈으로 이동
+            // 새로고침 후에도 홈으로 라우팅되도록 핵심 플래그·이름 백업
+            await StorageService.setOnboardingCompleted(true);
+            final kakaoNickname =
+                user?.kakaoAccount?.profile?.nickname?.trim();
+            final existingName = await StorageService.getUserName();
+            if ((existingName == null || existingName.isEmpty) &&
+                kakaoNickname != null &&
+                kakaoNickname.isNotEmpty) {
+              await StorageService.setUserName(kakaoNickname);
+            }
+            // householdId가 로컬에 비어 있으면 서버에서 한번 시도 (best-effort)
+            final localHid = await StorageService.getHouseholdId();
+            if (localHid == null || localHid.isEmpty) {
+              try {
+                final hh = await AuthService().fetchMyHousehold();
+                final hid = hh?.result?.id;
+                if (hh != null && hh.isSuccess && hid != null) {
+                  await StorageService.setHouseholdId(hid.toString());
+                }
+              } catch (_) {}
+            }
             targetRoute = AppRouter.partitionMain;
           } else if (result.userRole == 'GUEST') {
             // GUEST인 경우 온보딩으로 이동

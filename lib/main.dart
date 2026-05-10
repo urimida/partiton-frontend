@@ -176,16 +176,25 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   /// 사용자 상태에 따라 적절한 라우트 반환
   ///
-  /// 웹에서 새로고침 시에도 로그인된 사용자가 안정적으로 홈으로 이동하도록
-  /// "그룹(가구) 소속 여부"를 가장 우선 검사한다.
-  /// 카카오 로그인으로 LEADER/MEMBER가 곧장 홈으로 이동하는 경우
-  /// 로컬 SharedPreferences에는 userName/householdId가 저장되지 않을 수 있는데,
-  /// 이때 새로고침으로 닉네임만 보고 온보딩으로 잘못 보내는 문제를 막는다.
+  /// 웹 새로고침 시 로그인된 사용자가 안정적으로 홈에 도달하도록 다음 순서로 판별한다.
+  /// 1) 로컬에 저장된 [StorageService.getUserRole] (LEADER/MEMBER → 곧장 홈)
+  /// 2) 로컬 또는 서버 fallback의 가구(household) 소속 여부 (있으면 홈)
+  /// 3) `onboarding_completed` 플래그가 true이면 홈으로 간주
+  /// 4) 그래도 신규 사용자이면 닉네임 → 그룹 선택 순으로 온보딩
+  ///
+  /// 핵심 의도: "토큰이 살아 있으면 가능한 한 홈으로 보낸다"가 기본값이며,
+  /// GUEST(가구 미참여)인 경우에만 온보딩으로 우회한다.
   Future<String> _getTargetRoute() async {
     final authService = AuthService();
 
-    // 1. 그룹(가구) 확인 — 로컬 우선, 없으면 서버에서 조회
-    //    가구에 속해 있다는 것 자체가 "정상 온보딩 완료 사용자"라는 뜻.
+    // 1. 카카오 로그인 시 받았던 userRole — 가장 신뢰도 높은 신호
+    final storedRole = StorageService.getUserRole();
+    if (storedRole == 'LEADER' || storedRole == 'MEMBER') {
+      await StorageService.setOnboardingCompleted(true);
+      return AppRouter.partitionMain;
+    }
+
+    // 2. 그룹(가구) 확인 — 로컬 우선, 없으면 서버에서 조회
     String? householdId = await StorageService.getHouseholdId();
     if (householdId == null || householdId.isEmpty) {
       final household = await authService.fetchMyHousehold();
@@ -197,9 +206,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
     }
 
-    // 2. 그룹이 있으면 홈으로 이동 (닉네임이 로컬에 없어도 홈 진입 후 채워짐)
     if (householdId != null && householdId.isNotEmpty) {
-      // 닉네임 fallback 저장 (있으면)
       final userInfo = await authService.getUserInfo();
       final name = userInfo?.name;
       if (name != null && name.isNotEmpty) {
@@ -209,7 +216,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return AppRouter.partitionMain;
     }
 
-    // 3. 그룹이 없는 신규 사용자 → 닉네임 → 그룹 선택 순으로 온보딩
+    // 3. 과거에 온보딩을 마쳤던 흔적이 있으면 홈으로 (서버/네트워크 일시 실패 대비)
+    final onboardingDone = await StorageService.isOnboardingCompleted();
+    if (onboardingDone) {
+      return AppRouter.partitionMain;
+    }
+
+    // 4. 그래도 단서가 없으면 GUEST로 간주 — 닉네임 → 그룹 선택 순 온보딩
+    if (storedRole == 'GUEST') {
+      return AppRouter.onboardingSurvey;
+    }
+
     final userInfo = await authService.getUserInfo();
     String? userName = userInfo?.name;
     if (userName == null || userName.isEmpty) {

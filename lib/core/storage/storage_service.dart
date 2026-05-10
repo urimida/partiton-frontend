@@ -91,6 +91,20 @@ class StorageService {
     return _prefs?.getString('user_name');
   }
 
+  /// 카카오 로그인 응답의 `userRole` (LEADER / MEMBER / GUEST)을 저장.
+  /// 새로고침 후에도 사용자가 "이미 가구에 속한 정상 사용자"인지 빠르게 판별하는 데 사용.
+  static Future<bool> setUserRole(String role) async {
+    return await _prefs?.setString(AppConfig.userRoleKey, role) ?? false;
+  }
+
+  static String? getUserRole() {
+    return _prefs?.getString(AppConfig.userRoleKey);
+  }
+
+  static Future<bool> removeUserRole() async {
+    return await _prefs?.remove(AppConfig.userRoleKey) ?? false;
+  }
+
   static Future<bool> setOnboardingCompleted(bool completed) async {
     return await _prefs?.setBool('onboarding_completed', completed) ?? false;
   }

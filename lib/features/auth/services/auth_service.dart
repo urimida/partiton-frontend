@@ -156,6 +156,11 @@ class AuthService {
         if (jwtUid != null && jwtUid > 0) {
           await StorageService.setUserId('$jwtUid');
         }
+        // userRole(LEADER/MEMBER/GUEST)을 로컬에 저장 — 새로고침 시 1순위 라우팅 신호로 사용
+        final role = kakaoAuthResponse.result!.userRole.trim();
+        if (role.isNotEmpty) {
+          await StorageService.setUserRole(role);
+        }
       }
 
       return kakaoAuthResponse;

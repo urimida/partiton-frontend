@@ -47,6 +47,10 @@ class ConfirmGroupNameScreen extends StatelessWidget {
           if (householdId != null) {
             await StorageService.setHouseholdId(householdId);
           }
+
+          // 새로고침 후에도 홈으로 라우팅되도록 역할 갱신 (생성자 → LEADER)
+          await StorageService.setUserRole('LEADER');
+          await StorageService.setOnboardingCompleted(true);
           
           Navigator.of(context).pushReplacementNamed(
             AppRouter.groupCreated,

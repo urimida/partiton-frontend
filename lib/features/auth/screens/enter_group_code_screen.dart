@@ -52,6 +52,9 @@ class _EnterGroupCodeScreenState extends State<EnterGroupCodeScreen> {
             DebugHelper.log('그룹 참여 성공: householdId=${response.result!.id}');
           }
 
+          // 새로고침 후에도 홈으로 라우팅되도록 역할 갱신 (참여자 → MEMBER)
+          await StorageService.setUserRole('MEMBER');
+
           setState(() {
             _resultMessage = '그룹 참여가 완료되었습니다.';
             _isSuccess = true;
