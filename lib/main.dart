@@ -18,12 +18,16 @@ import 'package:partition_app/features/auth/services/auth_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  // Firebase는 웹에서 백그라운드 메시지 핸들러 미지원
+  if (!kIsWeb) {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
   await FcmRegistrationService.initializePlugin();
 
-  // 카카오 SDK 초기화
+  // 카카오 SDK 초기화 (웹은 javascriptAppKey 필요)
   KakaoSdk.init(
     nativeAppKey: '0638124027aec1134312be64899dcde2',
+    javaScriptAppKey: '4b6461d2fcd70ec1c6a0f4cd4c0c3cdf',
   );
 
   runApp(const PartitionApp());
