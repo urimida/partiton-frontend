@@ -54,9 +54,17 @@ class PartitionApp extends StatelessWidget {
         darkTheme: AppTheme.darkTheme,
         themeMode: ThemeMode.system,
         // 디버그 모드에서는 DebugHomeScreen을 시작 화면으로
-        home: kDebugMode 
-            ? const DebugHomeScreen() 
+        home: kDebugMode
+            ? const DebugHomeScreen()
             : const AuthWrapper(),
+        // 웹 새로고침 시 URL과 무관하게 항상 AuthWrapper에서 시작해 홈으로 리다이렉트
+        onGenerateInitialRoutes: kDebugMode
+            ? null
+            : (_) => [
+                  MaterialPageRoute(
+                    builder: (_) => const AuthWrapper(),
+                  ),
+                ],
         onGenerateRoute: AppRouter.generateRoute,
         // 넓은 화면(웹·태블릿 등)에서 세로형 폰 프레임으로 중앙 배치
         builder: (context, child) => _PhoneFrameWrapper(child: child!),
