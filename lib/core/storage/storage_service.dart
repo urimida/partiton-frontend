@@ -100,11 +100,28 @@ class StorageService {
   }
 
   static Future<bool> setHouseholdId(String householdId) async {
-    return await _prefs?.setString('household_id', householdId) ?? false;
+    // SharedPreferences와 SecureStorage 모두에 저장해 웹 새로고침 후에도 유실되지 않도록 함
+    final prefResult =
+        await _prefs?.setString('household_id', householdId) ?? false;
+    try {
+      await _secureStorage.write(key: 'household_id', value: householdId);
+    } catch (_) {}
+    return prefResult;
   }
 
   static Future<String?> getHouseholdId() async {
-    return _prefs?.getString('household_id');
+    // SharedPreferences 우선 조회, 없으면 SecureStorage에서 복구
+    final fromPrefs = _prefs?.getString('household_id');
+    if (fromPrefs != null && fromPrefs.isNotEmpty) return fromPrefs;
+    try {
+      final fromSecure = await _secureStorage.read(key: 'household_id');
+      if (fromSecure != null && fromSecure.isNotEmpty) {
+        // 복구된 값을 SharedPreferences에도 다시 저장
+        await _prefs?.setString('household_id', fromSecure);
+        return fromSecure;
+      }
+    } catch (_) {}
+    return null;
   }
 
   // ── 귀가 공유 설정 ───────────────────────────────────────────────────────

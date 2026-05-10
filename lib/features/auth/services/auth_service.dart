@@ -99,7 +99,38 @@ class AuthService {
 
   Future<bool> isAuthenticated() async {
     final token = await StorageService.getToken();
-    return token != null && token.isNotEmpty;
+    if (token == null || token.isEmpty) return false;
+    // JWT 만료 여부 확인 — 만료됐으면 저장된 토큰을 제거하고 false 반환
+    if (_isTokenExpired(token)) {
+      await StorageService.clear();
+      return false;
+    }
+    return true;
+  }
+
+  /// JWT exp 클레임을 기준으로 토큰 만료 여부 반환.
+  /// 파싱에 실패하면 만료되지 않은 것으로 간주(false 반환).
+  static bool _isTokenExpired(String token) {
+    try {
+      final segments = token.split('.');
+      if (segments.length < 2) return false;
+      var payload = segments[1];
+      final pad = payload.length % 4;
+      if (pad == 1) return false;
+      if (pad == 2) payload += '==';
+      if (pad == 3) payload += '=';
+      final jsonStr = utf8.decode(base64Url.decode(payload));
+      final decoded = jsonDecode(jsonStr);
+      if (decoded is! Map<String, dynamic>) return false;
+      final exp = decoded['exp'];
+      if (exp == null) return false;
+      final expSeconds = exp is int ? exp : int.tryParse(exp.toString());
+      if (expSeconds == null) return false;
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      return now >= expSeconds;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 카카오 로그인

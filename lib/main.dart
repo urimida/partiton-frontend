@@ -22,6 +22,9 @@ const double _kPhoneFrameWidth = 730.0;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // StorageService를 앱 시작 시점에 미리 초기화해 _prefs null 문제 방지
+  await StorageService.init();
+
   // Firebase는 웹에서 백그라운드 메시지 핸들러 미지원
   if (!kIsWeb) {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
@@ -130,10 +133,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 
   Future<void> _checkAuthStatus() async {
-    // StorageService 초기화
+    // main()에서 이미 초기화됐지만 위젯이 늦게 마운트된 경우를 대비해 재확인
     await StorageService.init();
-    
-    // 인증 상태 확인
+
+    // 인증 상태 확인 (JWT 만료 시 자동 클리어 후 false 반환)
     final authService = AuthService();
     final isAuth = await authService.isAuthenticated();
     
