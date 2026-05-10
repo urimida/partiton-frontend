@@ -148,30 +148,10 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
 
   // ── UI 빌드 ────────────────────────────────────────────────────────────────
 
-  /// 캘린더 높이를 콘텐츠 너비 기반으로 계산.
-  /// FrostedPanel 내부 패딩: 가로 28*2=56, 세로 24*2=48
-  /// 그리드: 6주 * 셀높이 (childAspectRatio 1:1, crossAxisSpacing 8 * 6칸)
-  /// 헤더 영역: 월 선택기(~40) + spacing(20) + 요일 레이블(~20) + spacing(12) ≈ 92
-  static double _calcCalendarHeight(double contentWidth) {
-    const double frostedH = 56.0; // 28 * 2
-    const double frostedV = 48.0; // 24 * 2
-    const double headerH = 92.0;
-    const double buffer = 16.0;
-    final double innerWidth = contentWidth - frostedH;
-    final double cellWidth = ((innerWidth - 6 * 8.0) / 7.0).clamp(28.0, double.infinity);
-    final double gridHeight = 6.0 * cellWidth;
-    return (gridHeight + headerH + frostedV + buffer).clamp(360.0, 600.0);
-  }
-
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-
-    // 큰 화면에서도 모바일 레이아웃처럼 보이도록 최대 너비 제한 (가운데 정렬)
-    // SingleChildScrollView의 horizontal padding 16*2=32 를 이미 제외한 너비
-    const double maxContentWidth = 448.0; // 480 - 32(padding)
-    final double contentWidth = (screenWidth - 32.0).clamp(0.0, maxContentWidth);
-    final double calendarHeight = _calcCalendarHeight(contentWidth);
+    final buttonWidth = screenWidth - 32;
 
     return Container(
       width: double.infinity,
@@ -179,49 +159,44 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
       color: Colors.transparent,
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: maxContentWidth),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const SizedBox(height: 0),
-                SvgPicture.asset(
-                  'assets/icons/logo.svg',
-                  width: 80,
-                  height: 80,
-                ),
-                const SizedBox(height: 26),
-                SizedBox(
-                  width: double.infinity,
-                  height: calendarHeight,
-                  child: HomeCalendarWidget(
-                    key: _calendarKey,
-                    onDateSelected: _onDateSelected,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                PrimaryButton(
-                  label: '일정 등록하기',
-                  width: contentWidth,
-                  onPressed: () => _showScheduleRegistrationModal(context),
-                ),
-                const SizedBox(height: 10),
-                PrimaryButton(
-                  label: '집안일 자동 배정',
-                  width: contentWidth,
-                  onPressed: () => _showChoreAssignmentModal(context),
-                ),
-                const SizedBox(height: 12),
-                _HomeShareCard(
-                  onToggle: () => _onToggleSharing(context),
-                  onEditLocation: () => _onEditHomeLocation(context),
-                ),
-                const SizedBox(height: 20),
-              ],
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const SizedBox(height: 0),
+            SvgPicture.asset(
+              'assets/icons/logo.svg',
+              width: 80,
+              height: 80,
             ),
-          ),
+            const SizedBox(height: 26),
+            SizedBox(
+              width: double.infinity,
+              height: 382,
+              child: HomeCalendarWidget(
+                key: _calendarKey,
+                onDateSelected: _onDateSelected,
+              ),
+            ),
+            const SizedBox(height: 10),
+            PrimaryButton(
+              label: '일정 등록하기',
+              width: buttonWidth,
+              onPressed: () => _showScheduleRegistrationModal(context),
+            ),
+            const SizedBox(height: 10),
+            PrimaryButton(
+              label: '집안일 자동 배정',
+              width: buttonWidth,
+              onPressed: () => _showChoreAssignmentModal(context),
+            ),
+            const SizedBox(height: 12),
+            _HomeShareCard(
+              onToggle: () => _onToggleSharing(context),
+              onEditLocation: () => _onEditHomeLocation(context),
+            ),
+            const SizedBox(height: 20),
+          ],
         ),
       ),
     );

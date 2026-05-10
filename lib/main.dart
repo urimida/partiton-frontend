@@ -15,6 +15,10 @@ import 'package:partition_app/debug/debug_home_screen.dart';
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 
+/// 화면 너비가 이 값을 초과하면 세로형 폰 프레임으로 중앙에 배치
+const double _kPhoneFrameBreakpoint = 480.0;
+const double _kPhoneFrameWidth = 430.0;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -51,7 +55,58 @@ class PartitionApp extends StatelessWidget {
             ? const DebugHomeScreen() 
             : const AuthWrapper(),
         onGenerateRoute: AppRouter.generateRoute,
+        // 넓은 화면(웹·태블릿 등)에서 세로형 폰 프레임으로 중앙 배치
+        builder: (context, child) => _PhoneFrameWrapper(child: child!),
       ),
+    );
+  }
+}
+
+/// 화면 너비가 [_kPhoneFrameBreakpoint]를 초과할 때
+/// 앱 전체를 [_kPhoneFrameWidth] 폭의 세로형 컨테이너 안에 가운데 배치합니다.
+/// MediaQuery도 함께 오버라이드해 내부 위젯이 올바른 크기를 보고하게 합니다.
+class _PhoneFrameWrapper extends StatelessWidget {
+  final Widget child;
+  const _PhoneFrameWrapper({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double screenW = constraints.maxWidth;
+        final double screenH = constraints.maxHeight;
+
+        // 이미 폰 크기이거나 세로가 더 짧은 경우 → 그대로 렌더
+        if (screenW <= _kPhoneFrameBreakpoint) {
+          return child;
+        }
+
+        // 넓은 화면: 폰 프레임 내에 렌더
+        final double frameW = _kPhoneFrameWidth.clamp(0.0, screenW);
+        final double frameH = screenH;
+
+        // MediaQuery를 덮어써서 내부 위젯이 폰 크기(frameW × frameH)를 인식하게 함
+        final MediaQueryData parentMq = MediaQuery.of(context);
+        final MediaQueryData childMq = parentMq.copyWith(
+          size: Size(frameW, frameH),
+        );
+
+        return Container(
+          width: screenW,
+          height: screenH,
+          color: const Color(0xFF060F18), // 앱 테마와 어우러지는 짙은 네이비
+          child: Center(
+            child: SizedBox(
+              width: frameW,
+              height: frameH,
+              child: MediaQuery(
+                data: childMq,
+                child: ClipRect(child: child),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -132,13 +187,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return AppRouter.groupSelection; // 그룹 선택 화면
     }
 
-    // 3. 선호도 입력 완료 여부 확인
-    final isOnboardingCompleted = await StorageService.isOnboardingCompleted();
-    if (!isOnboardingCompleted) {
-      return AppRouter.preferenceSurvey; // 선호도 설문 화면
-    }
-
-    // 모든 설정이 완료된 경우 홈으로 이동
+    // 그룹에 이미 속해있으면 온보딩 완료로 간주하고 홈으로 이동
+    // (onboarding_completed 플래그가 유실된 경우에도 홈으로 정상 이동)
+    await StorageService.setOnboardingCompleted(true);
     return AppRouter.partitionMain;
   }
 
