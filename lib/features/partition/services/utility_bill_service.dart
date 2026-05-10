@@ -192,4 +192,106 @@ class UtilityBillService {
       throw ApiException.fromDioError(e);
     }
   }
+
+  /// 공과금 **정산 요청** — `POST /api/bills/settlement` (`billIds`, `memberIds`).
+  /// 푸시 알림은 서버에서 발송; 단말은 `PATCH /users/me/fcm-token`으로 FCM 토큰을 등록해야 함.
+  Future<BillSettlementRequestResult> requestBillSettlement({
+    required List<int> billIds,
+    required List<int> memberIds,
+  }) async {
+    if (billIds.isEmpty) {
+      throw ApiException(message: '정산할 공과금을 선택해주세요.');
+    }
+    if (memberIds.isEmpty) {
+      throw ApiException(message: '정산 대상 멤버를 선택해주세요.');
+    }
+    try {
+      final response = await _apiClient.post(
+        AppConfig.billsSettlementRequestEndpoint,
+        data: {
+          'billIds': billIds,
+          'memberIds': memberIds,
+        },
+      );
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        throw ApiException(message: '공과금 정산 요청 응답 형식이 올바르지 않습니다.');
+      }
+      if (data['isSuccess'] != true) {
+        throw ApiException(
+          message: data['message']?.toString() ?? '공과금 정산 요청에 실패했습니다.',
+          statusCode: response.statusCode,
+        );
+      }
+      final raw = data['result'];
+      if (raw is! Map<String, dynamic>) {
+        throw ApiException(message: '공과금 정산 요청 결과가 없습니다.');
+      }
+      return BillSettlementRequestResult.fromJson(raw);
+    } on ApiException {
+      rethrow;
+    } on DioException catch (e) {
+      throw ApiException.fromDioError(e);
+    }
+  }
+
+  /// 정산 **상세** 조회 (GET `/bills/settlement/{settlementId}`)
+  Future<BillSettlementDetailResult> fetchBillSettlementDetail(
+    int settlementId,
+  ) async {
+    if (settlementId <= 0) {
+      throw ApiException(message: '유효하지 않은 정산입니다.');
+    }
+    try {
+      final response = await _apiClient.get(
+        AppConfig.billsSettlementDetailPath(settlementId),
+      );
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        throw ApiException(message: '공과금 정산 상세 응답 형식이 올바르지 않습니다.');
+      }
+      if (data['isSuccess'] != true) {
+        throw ApiException(
+          message: data['message']?.toString() ?? '공과금 정산 상세 조회에 실패했습니다.',
+        );
+      }
+      final raw = data['result'];
+      if (raw is! Map<String, dynamic>) {
+        throw ApiException(message: '공과금 정산 상세 결과가 없습니다.');
+      }
+      return BillSettlementDetailResult.fromJson(raw);
+    } on DioException catch (e) {
+      throw ApiException.fromDioError(e);
+    }
+  }
+
+  /// 정산 **완료** 처리 (PATCH `/bills/settlement/{settlementId}/confirm`)
+  Future<BillSettlementConfirmResult> confirmBillSettlement(
+    int settlementId,
+  ) async {
+    if (settlementId <= 0) {
+      throw ApiException(message: '유효하지 않은 정산입니다.');
+    }
+    try {
+      final response = await _apiClient.patch(
+        AppConfig.billsSettlementConfirmPath(settlementId),
+      );
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        throw ApiException(message: '공과금 정산 완료 응답 형식이 올바르지 않습니다.');
+      }
+      if (data['isSuccess'] != true) {
+        throw ApiException(
+          message: data['message']?.toString() ?? '공과금 정산 완료 처리에 실패했습니다.',
+        );
+      }
+      final raw = data['result'];
+      if (raw is! Map<String, dynamic>) {
+        throw ApiException(message: '공과금 정산 완료 결과가 없습니다.');
+      }
+      return BillSettlementConfirmResult.fromJson(raw);
+    } on DioException catch (e) {
+      throw ApiException.fromDioError(e);
+    }
+  }
 }

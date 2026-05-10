@@ -107,6 +107,52 @@ class StorageService {
     return _prefs?.getString('household_id');
   }
 
+  // ── 귀가 공유 설정 ───────────────────────────────────────────────────────
+  static Future<bool> setSharingEnabled(bool enabled) async {
+    return await _prefs?.setBool('home_sharing_enabled', enabled) ?? false;
+  }
+
+  static bool getSharingEnabled() {
+    return _prefs?.getBool('home_sharing_enabled') ?? false;
+  }
+
+  static Future<bool> setHomeLocation(double lat, double lng, double radius) async {
+    final ok1 = await _prefs?.setDouble('home_lat', lat) ?? false;
+    final ok2 = await _prefs?.setDouble('home_lng', lng) ?? false;
+    final ok3 = await _prefs?.setDouble('home_radius', radius) ?? false;
+    return ok1 && ok2 && ok3;
+  }
+
+  /// null 이면 집 위치가 설정되지 않은 것
+  static ({double lat, double lng, double radius})? getHomeLocation() {
+    final lat = _prefs?.getDouble('home_lat');
+    final lng = _prefs?.getDouble('home_lng');
+    final radius = _prefs?.getDouble('home_radius') ?? 300.0;
+    // lat/lng 가 0,0 이면 미설정으로 간주
+    if (lat == null || lng == null || (lat == 0.0 && lng == 0.0)) return null;
+    return (lat: lat, lng: lng, radius: radius);
+  }
+
+  static Future<void> clearHomeLocation() async {
+    await _prefs?.remove('home_lat');
+    await _prefs?.remove('home_lng');
+    await _prefs?.remove('home_radius');
+  }
+
+  static Future<bool> setLastNearHomeNotification(DateTime time) async {
+    return await _prefs?.setInt(
+          'last_near_home_at',
+          time.millisecondsSinceEpoch,
+        ) ??
+        false;
+  }
+
+  static DateTime? getLastNearHomeNotification() {
+    final ms = _prefs?.getInt('last_near_home_at');
+    if (ms == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(ms);
+  }
+
   static Future<bool> clear() async {
     try {
       // Secure storage 삭제

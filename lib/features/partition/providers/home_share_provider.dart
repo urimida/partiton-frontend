@@ -1,0 +1,214 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:partition_app/core/storage/storage_service.dart';
+import 'package:partition_app/features/partition/services/home_share_service.dart';
+
+/// 귀가 공유 상태 및 위치 감시 로직을 관리합니다.
+///
+/// 동작 흐름:
+///   1. [initialize] — 앱 시작 시 저장된 설정 복원 및 위치 감시 재개
+///   2. [enableSharing] — 위치 권한 요청 후 실시간 위치 스트림 시작
+///   3. [disableSharing] — 위치 스트림 중단
+///   4. [setHomeFromCurrentLocation] — 현재 GPS 좌표를 집 위치로 저장
+class HomeShareProvider extends ChangeNotifier {
+  static const Duration _cooldown = Duration(minutes: 30);
+  static const double _defaultRadius = 300.0;
+
+  bool _isEnabled = false;
+  bool _isNearHome = false;
+  bool _isLoading = false;
+
+  ({double lat, double lng, double radius})? _homeLocation;
+  DateTime? _lastNotifiedAt;
+  StreamSubscription<Position>? _positionSub;
+
+  final HomeShareService _service = HomeShareService();
+
+  bool get isEnabled => _isEnabled;
+  bool get isNearHome => _isNearHome;
+  bool get isLoading => _isLoading;
+  ({double lat, double lng, double radius})? get homeLocation => _homeLocation;
+
+  /// 저장된 상태를 로드하고 필요 시 위치 감시를 재개합니다.
+  Future<void> initialize() async {
+    _isEnabled = StorageService.getSharingEnabled();
+    _homeLocation = StorageService.getHomeLocation();
+    _lastNotifiedAt = StorageService.getLastNearHomeNotification();
+
+    if (_isEnabled && _homeLocation != null) {
+      await _startLocationWatch();
+    }
+    notifyListeners();
+  }
+
+  /// 위치 권한을 확인하고 귀가 공유를 활성화합니다.
+  /// [true] 반환 시 성공, [false] 반환 시 권한 거부 등으로 실패.
+  Future<bool> enableSharing() async {
+    if (_isLoading || _isEnabled) return false;
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final bool granted = await _ensureLocationPermission();
+      if (!granted) return false;
+
+      await _startLocationWatch();
+      _isEnabled = true;
+      await StorageService.setSharingEnabled(true);
+
+      // 서버에 동의 저장 (실패해도 로컬 기능은 동작)
+      _service.saveLocationConsent(agreed: true).catchError((Object e) {
+        debugPrint('[HomeShare] 동의 서버 저장 실패: $e');
+      });
+
+      return true;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// 귀가 공유를 비활성화하고 위치 감시를 중단합니다.
+  Future<void> disableSharing() async {
+    _stopLocationWatch();
+    _isEnabled = false;
+    _isNearHome = false;
+    await StorageService.setSharingEnabled(false);
+
+    _service.saveLocationConsent(agreed: false).catchError((Object e) {
+      debugPrint('[HomeShare] 동의 해제 서버 저장 실패: $e');
+    });
+
+    notifyListeners();
+  }
+
+  /// 현재 GPS 위치를 집 위치로 설정하고 저장합니다.
+  /// [true] 반환 시 성공.
+  Future<bool> setHomeFromCurrentLocation() async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final bool granted = await _ensureLocationPermission();
+      if (!granted) return false;
+
+      final Position pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      _homeLocation = (
+        lat: pos.latitude,
+        lng: pos.longitude,
+        radius: _defaultRadius,
+      );
+      await StorageService.setHomeLocation(
+        pos.latitude,
+        pos.longitude,
+        _defaultRadius,
+      );
+
+      // 서버에도 저장 (실패해도 로컬 기능은 동작)
+      _service
+          .saveHomeLocation(lat: pos.latitude, lng: pos.longitude)
+          .catchError((Object e) {
+        debugPrint('[HomeShare] 집 위치 서버 저장 실패: $e');
+      });
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('[HomeShare] 현재 위치 가져오기 실패: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// 집 위치를 초기화합니다.
+  Future<void> clearHomeLocation() async {
+    _homeLocation = null;
+    await StorageService.clearHomeLocation();
+    notifyListeners();
+  }
+
+  // ── 내부 메서드 ────────────────────────────────────────────────────────────
+
+  Future<bool> _ensureLocationPermission() async {
+    final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return false;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    return permission != LocationPermission.denied &&
+        permission != LocationPermission.deniedForever;
+  }
+
+  Future<void> _startLocationWatch() async {
+    _positionSub?.cancel();
+
+    // distanceFilter: 50m 이동 시에만 콜백 — 배터리 절약
+    const LocationSettings settings = LocationSettings(
+      accuracy: LocationAccuracy.medium,
+      distanceFilter: 50,
+    );
+
+    _positionSub = Geolocator.getPositionStream(locationSettings: settings)
+        .listen(
+      _onPosition,
+      onError: (Object e) {
+        debugPrint('[HomeShare] 위치 스트림 오류: $e');
+      },
+    );
+  }
+
+  void _stopLocationWatch() {
+    _positionSub?.cancel();
+    _positionSub = null;
+  }
+
+  void _onPosition(Position position) {
+    final home = _homeLocation;
+    if (home == null) return;
+
+    final double dist = Geolocator.distanceBetween(
+      position.latitude,
+      position.longitude,
+      home.lat,
+      home.lng,
+    );
+
+    final bool wasNear = _isNearHome;
+    _isNearHome = dist <= home.radius;
+
+    // 집 반경에 처음 진입할 때만 알림 전송
+    if (_isNearHome && !wasNear) {
+      _maybeNotify();
+    }
+
+    notifyListeners();
+  }
+
+  void _maybeNotify() {
+    if (_lastNotifiedAt != null &&
+        DateTime.now().difference(_lastNotifiedAt!) < _cooldown) {
+      return;
+    }
+    _lastNotifiedAt = DateTime.now();
+    StorageService.setLastNearHomeNotification(_lastNotifiedAt!);
+
+    _service.sendNearHomeEvent().catchError((Object e) {
+      debugPrint('[HomeShare] 집 근처 알림 전송 실패: $e');
+    });
+  }
+
+  @override
+  void dispose() {
+    _stopLocationWatch();
+    super.dispose();
+  }
+}

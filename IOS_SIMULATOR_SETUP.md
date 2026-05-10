@@ -38,11 +38,13 @@ cd ..
 ## 4단계: iOS 시뮬레이터 열기
 
 방법 1: 명령어로 열기
+
 ```bash
 open -a Simulator
 ```
 
 방법 2: Xcode에서 열기
+
 - Xcode 실행
 - 상단 메뉴: `Xcode` → `Open Developer Tool` → `Simulator`
 
@@ -147,6 +149,4 @@ cd /Users/urimida/Documents/partition/Frontend
 flutter run
 ```
 
-앱이 실행되면 코드를 수정하고 `r` 키를 눌러 Hot Reload를 사용하세요! 🚀
-
-
+앱이 실행되면 코드를 수정하고 `r` 키를 눌러 Hot Reload를 사용하세요!

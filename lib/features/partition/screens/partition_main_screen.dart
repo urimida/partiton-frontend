@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/core/push/fcm_registration_service.dart';
 import 'package:partition_app/features/partition/controllers/alarm_navigation_controller.dart';
@@ -12,7 +17,12 @@ import 'package:partition_app/features/partition/screens/partition_home_screen.d
 import 'package:partition_app/features/partition/screens/partition_shared_expense_screen.dart';
 import 'package:partition_app/features/partition/screens/partition_report_screen.dart';
 import 'package:partition_app/features/partition/services/alarm_service.dart';
+import 'package:partition_app/features/partition/models/insight_query_models.dart';
+import 'package:partition_app/features/partition/utils/recording_cleanup.dart';
 import 'package:partition_app/features/partition/screens/partition_board_screen.dart';
+import 'package:partition_app/features/partition/screens/partition_insight_result_screen.dart';
+import 'package:partition_app/features/partition/services/insights_query_service.dart';
+import 'package:partition_app/features/partition/providers/home_share_provider.dart';
 /// 파티션 메인 화면 - 4개의 탭으로 구성
 class PartitionMainScreen extends StatefulWidget {
   const PartitionMainScreen({super.key});
@@ -23,6 +33,9 @@ class PartitionMainScreen extends StatefulWidget {
 
 class _PartitionMainScreenState extends State<PartitionMainScreen>
     with TickerProviderStateMixin {
+  /// 알림 패널이 완전히 열렸을 때 차지하는 높이 = 화면 세로의 이 비율 (고정 px 대비 짧은 기기 대응)
+  static const double _alarmPanelOpenHeightFraction = 4 / 5;
+
   static const Color _bottomNavInactiveColor = Color(0xFF26394B);
   /// 읽은 알림 행 배경 — 흰 톤보다 어둡고 남색(#26394B) 계열 혼합
   static const Color _alarmReadRowFill = Color(0xFF1A2F42);
@@ -237,11 +250,20 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
       _handleFcmRemoteOpenForAlarmNavigation,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (_initialFcmOpenHandled || !mounted) return;
-      _initialFcmOpenHandled = true;
-      final m = await FirebaseMessaging.instance.getInitialMessage();
-      if (m != null && mounted) {
-        _handleFcmRemoteOpenForAlarmNavigation(m);
+      if (!mounted) return;
+
+      // FCM 초기 메시지 처리
+      if (!_initialFcmOpenHandled) {
+        _initialFcmOpenHandled = true;
+        final m = await FirebaseMessaging.instance.getInitialMessage();
+        if (m != null && mounted) {
+          _handleFcmRemoteOpenForAlarmNavigation(m);
+        }
+      }
+
+      // 귀가 공유 저장된 상태 복원
+      if (mounted) {
+        await context.read<HomeShareProvider>().initialize();
       }
     });
   }
@@ -310,12 +332,13 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   Widget _buildUnifiedBottomComponent() {
     /// 아래쪽만 늘리며 바닥에 붙이는 높이(이전 10px 띄움만큼 하단 확장).
     const double closedHeight = 148.0;
-    const double openHeight = 700.0;
 
     return AnimatedBuilder(
       animation: _panelController,
       builder: (context, child) {
         final t = _panelController.value;
+        final screenH = MediaQuery.sizeOf(context).height;
+        final openHeight = screenH * _alarmPanelOpenHeightFraction;
         final height = lerpDouble(closedHeight, openHeight, t)!;
         const double bottom = 0.0;
         return Positioned(
@@ -334,8 +357,12 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onVerticalDragUpdate: (details) {
+        final screenH = MediaQuery.sizeOf(context).height;
+        final openH = screenH * _alarmPanelOpenHeightFraction;
+        const closedH = 148.0;
+        final dragRange = (openH - closedH).clamp(240.0, 1200.0);
         _panelController.value =
-            (_panelController.value - details.delta.dy / 450.0)
+            (_panelController.value - details.delta.dy / dragRange)
                 .clamp(0.0, 1.0);
       },
       onVerticalDragEnd: (details) {
@@ -492,7 +519,10 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                     ),
                   );
                 },
-                child: _buildOrb(),
+                child: GestureDetector(
+                  onTap: _showAiModal,
+                  child: _buildOrb(),
+                ),
               ),
             ],
           ),
@@ -712,6 +742,27 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
     );
   }
 
+  Future<void> _showAiModal() async {
+    final result = await showGeneralDialog<InsightQueryResult?>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'AI 모달',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (ctx, anim1, anim2) => const _PartitionAiModal(),
+      transitionBuilder: (ctx, anim1, anim2, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: anim1, curve: Curves.easeOut),
+        child: child,
+      ),
+    );
+    if (!mounted || result == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PartitionInsightResultScreen(result: result),
+      ),
+    );
+  }
+
   Widget _buildOrb() {
     return Container(
       width: 88,
@@ -878,4 +929,869 @@ class _UnifiedNavClipper extends CustomClipper<Path> {
 
   @override
   bool shouldReclip(_UnifiedNavClipper oldClipper) => oldClipper.t != t;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 파티션 AI 질문 모달
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// 사용자 지정 액센트 (#FFFDCB, 불투명)
+const Color _kPartitionAiCream = Color(0xFFFFFDCB);
+
+/// 화면 가장자리 얇은 선 — 흰색↔크림이 천천히 흐르는 물결 느낌 (전체 화면 그라데이션 대비 가벼움)
+class _ScreenEdgeFlowBorderPainter extends CustomPainter {
+  _ScreenEdgeFlowBorderPainter({required this.flowT});
+
+  /// 0~1 한 바퀴
+  final double flowT;
+
+  static const double _stroke = 1.25;
+  static const double _inset = 0.75;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.width <= 0 || size.height <= 0) return;
+
+    // 화면 비율 기반으로 모서리 반경을 동적으로 계산 (폰 화면 곡률에 맞춤)
+    final cornerRadius = size.width * 0.12;
+
+    final rect = Rect.fromLTWH(
+      _inset,
+      _inset,
+      size.width - _inset * 2,
+      size.height - _inset * 2,
+    );
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(cornerRadius));
+    final path = Path()..addRRect(rrect);
+
+    final sweep = SweepGradient(
+      center: Alignment.center,
+      startAngle: flowT * math.pi * 2,
+      endAngle: flowT * math.pi * 2 + math.pi * 2,
+      colors: [
+        Colors.white.withOpacity(0.95),
+        _kPartitionAiCream.withOpacity(0.92),
+        Colors.white.withOpacity(0.95),
+        _kPartitionAiCream.withOpacity(0.92),
+        Colors.white.withOpacity(0.95),
+      ],
+      stops: const [0.0, 0.22, 0.45, 0.68, 1.0],
+    );
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = _stroke
+      ..shader = sweep.createShader(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+      );
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScreenEdgeFlowBorderPainter oldDelegate) =>
+      oldDelegate.flowT != flowT;
+}
+
+class _PartitionAiModal extends StatefulWidget {
+  const _PartitionAiModal();
+
+  @override
+  State<_PartitionAiModal> createState() => _PartitionAiModalState();
+}
+
+class _PartitionAiModalState extends State<_PartitionAiModal>
+    with TickerProviderStateMixin {
+  /// 테두리 색 흐름 (느리게 한 바퀴 — 레이어 하나·선만 repaint)
+  late final AnimationController _borderFlowCtrl;
+
+  final InsightsQueryService _insights = InsightsQueryService();
+  final AudioRecorder _recorder = AudioRecorder();
+
+  // 0 = 텍스트로 질문, 1 = 자연어(음성)로 질문
+  int _modeIndex = 0;
+
+  // 텍스트 모드
+  final TextEditingController _textCtrl = TextEditingController();
+  final FocusNode _textFocus = FocusNode();
+
+  /// 음성과 함께 보낼 선택 질문 (`text+audio`)
+  final TextEditingController _voiceAuxCtrl = TextEditingController();
+
+  late DateTime _startDate;
+  late DateTime _endDate;
+
+  bool _submitting = false;
+
+  bool _isRecording = false;
+  bool _micBusy = false;
+  Timer? _recordingTicker;
+  int _recordingSecs = 0;
+  String? _recordingPathActive;
+  String? _recordedPath;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _borderFlowCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 7),
+    )..repeat();
+
+    final now = DateTime.now();
+    _startDate = DateTime(now.year, now.month, 1);
+    _endDate = DateTime(now.year, now.month, now.day);
+  }
+
+  String _fmtYmd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _pickStartDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _startDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _startDate = picked;
+      if (_endDate.isBefore(_startDate)) _endDate = _startDate;
+    });
+  }
+
+  Future<void> _pickEndDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _endDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _endDate = picked;
+      if (_startDate.isAfter(_endDate)) _startDate = _endDate;
+    });
+  }
+
+  Future<void> _showMicPermissionDialog(bool permanentlyDenied) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('마이크 권한'),
+        content: Text(
+          permanentlyDenied
+              ? '마이크가 꺼져 있어 녹음할 수 없습니다. 설정에서 Partition 앱의 마이크를 허용해 주세요.'
+              : '음성으로 질문하려면 마이크 사용에 동의해 주세요. 시스템에서 뜨는 허용 창에서 「허용」을 눌러 주세요.',
+        ),
+        actions: [
+          if (permanentlyDenied)
+            TextButton(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                await openAppSettings();
+              },
+              child: const Text('설정 열기'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showRecordingErrorDialog(String message) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('녹음'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startRecording() async {
+    if (_submitting || _isRecording) return;
+    setState(() => _micBusy = true);
+    try {
+      if (!kIsWeb) {
+        var status = await Permission.microphone.status;
+        if (!status.isGranted) {
+          status = await Permission.microphone.request();
+        }
+        if (!status.isGranted) {
+          if (mounted) {
+            await _showMicPermissionDialog(status.isPermanentlyDenied);
+          }
+          return;
+        }
+      }
+
+      final recorderOk = await _recorder.hasPermission();
+      if (!recorderOk) {
+        if (mounted) {
+          await _showMicPermissionDialog(false);
+        }
+        return;
+      }
+
+      if (_recordedPath != null) {
+        await discardLocalRecording(_recordedPath);
+        if (mounted) {
+          setState(() => _recordedPath = null);
+        }
+      }
+
+      final dir = await getTemporaryDirectory();
+      final path =
+          '${dir.path}/insight_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      final recordConfig = RecordConfig(
+        encoder: kIsWeb ? AudioEncoder.wav : AudioEncoder.aacLc,
+      );
+
+      try {
+        await _recorder.start(
+          recordConfig,
+          path: path,
+        );
+      } catch (e) {
+        debugPrint('[PartitionAI] record start failed: $e');
+        if (mounted) {
+          await _showRecordingErrorDialog(
+            '녹음을 시작하지 못했습니다.\n\n$e',
+          );
+        }
+        return;
+      }
+
+      _recordingTicker?.cancel();
+      if (!mounted) return;
+      setState(() {
+        _isRecording = true;
+        _recordingSecs = 0;
+        _recordingPathActive = path;
+      });
+      _recordingTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _recordingSecs++);
+      });
+    } finally {
+      if (mounted) setState(() => _micBusy = false);
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    if (!_isRecording) return;
+    _recordingTicker?.cancel();
+    _recordingTicker = null;
+    try {
+      final path = await _recorder.stop();
+      if (!mounted) return;
+      setState(() {
+        _isRecording = false;
+        _recordedPath = path ?? _recordingPathActive;
+        _recordingPathActive = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isRecording = false;
+          _recordingPathActive = null;
+        });
+        await _showRecordingErrorDialog('녹음을 저장하지 못했습니다.\n\n$e');
+      }
+    }
+  }
+
+  Future<void> _discardRecording() async {
+    final p = _recordedPath;
+    if (p != null) {
+      await discardLocalRecording(p);
+    }
+    if (!mounted) return;
+    setState(() {
+      _recordedPath = null;
+      _recordingSecs = 0;
+    });
+  }
+
+  Future<void> _submitText() async {
+    final query = _textCtrl.text.trim();
+    if (query.isEmpty) return;
+    setState(() => _submitting = true);
+    try {
+      final res = await _insights.queryText(
+        question: query,
+        startDate: _fmtYmd(_startDate),
+        endDate: _fmtYmd(_endDate),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(res);
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('요청 실패: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _submitVoice() async {
+    final path = _recordedPath;
+    if (path == null || path.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('녹음을 완료한 뒤 질문하기를 눌러 주세요.')),
+      );
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      final res = await _insights.queryVoice(
+        audioFilePath: path,
+        question: _voiceAuxCtrl.text.trim().isEmpty
+            ? null
+            : _voiceAuxCtrl.text.trim(),
+        startDate: _fmtYmd(_startDate),
+        endDate: _fmtYmd(_endDate),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(res);
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('요청 실패: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  void _switchMode(int index) {
+    if (_isRecording) {
+      unawaited(_stopRecording());
+    }
+    setState(() {
+      _modeIndex = index;
+    });
+    if (index == 0) {
+      _textFocus.requestFocus();
+    }
+  }
+
+  @override
+  void dispose() {
+    _recordingTicker?.cancel();
+    unawaited(_recorder.dispose());
+    _borderFlowCtrl.dispose();
+    _textCtrl.dispose();
+    _textFocus.dispose();
+    _voiceAuxCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: SizedBox.expand(
+        child: Stack(
+          children: [
+            // ── 어두운 반투명 배경 ─────────────────────────────────────────
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(color: Colors.black.withOpacity(0.55)),
+              ),
+            ),
+
+            // ── 화면 가장자리 얇은 선: 흰색 ↔ #FFFDCB 색이 천천히 흐름 ─────
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _borderFlowCtrl,
+                  builder: (context, _) {
+                    return CustomPaint(
+                      painter: _ScreenEdgeFlowBorderPainter(
+                        flowT: _borderFlowCtrl.value,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // ── 모달 카드 ──────────────────────────────────────────────────
+            Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  MediaQuery.of(context).padding.top + 24,
+                  24,
+                  MediaQuery.of(context).padding.bottom + 24,
+                ),
+                child: _buildCard(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(28),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.11),
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.22),
+              width: 1.0,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 드래그 핸들
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.38),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 18),
+
+              // 제목
+              const Text(
+                '파티션 AI에게 질문하기',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                  decoration: TextDecoration.none,
+                  decorationColor: Colors.transparent,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              _buildQueryOptions(),
+              const SizedBox(height: 18),
+
+              // 모드 토글
+              _buildModeToggle(),
+              const SizedBox(height: 24),
+
+              // 모드별 내용
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: _modeIndex == 0
+                    ? _buildTextMode()
+                    : _buildVoiceMode(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQueryOptions() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '조회 기간',
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.55),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            decoration: TextDecoration.none,
+            decorationColor: Colors.transparent,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _dateChip(
+                label: '시작',
+                value: _fmtYmd(_startDate),
+                onTap: _submitting ? null : _pickStartDate,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _dateChip(
+                label: '종료',
+                value: _fmtYmd(_endDate),
+                onTap: _submitting ? null : _pickEndDate,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _dateChip({
+    required String label,
+    required String value,
+    VoidCallback? onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.07),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.14)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.42),
+                  fontSize: 11,
+                  decoration: TextDecoration.none,
+                  decorationColor: Colors.transparent,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.none,
+                  decorationColor: Colors.transparent,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModeToggle() {
+    return Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
+      ),
+      child: Row(
+        children: [
+          _buildModeTab('텍스트로 질문', 0),
+          _buildModeTab('자연어로 질문', 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeTab(String label, int index) {
+    final isSelected = _modeIndex == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _switchMode(index),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.white.withOpacity(0.18)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected
+                  ? Colors.white
+                  : Colors.white.withOpacity(0.45),
+              fontSize: 13,
+              fontWeight:
+                  isSelected ? FontWeight.w600 : FontWeight.normal,
+              decoration: TextDecoration.none,
+              decorationColor: Colors.transparent,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── 텍스트 입력 모드 ─────────────────────────────────────────────────────
+
+  Widget _buildTextMode() {
+    return Column(
+      key: const ValueKey('text'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.07),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.18)),
+          ),
+          child: TextField(
+            controller: _textCtrl,
+            focusNode: _textFocus,
+            autofocus: true,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              decoration: TextDecoration.none,
+              decorationColor: Colors.transparent,
+            ),
+            decoration: InputDecoration(
+              hintText: '파티션 AI에게 물어보세요...',
+              hintStyle: TextStyle(
+                color: Colors.white.withOpacity(0.32),
+                fontSize: 15,
+              ),
+              contentPadding:
+                  const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+            ),
+            maxLines: 5,
+            minLines: 3,
+            cursorColor: _kPartitionAiCream,
+            cursorWidth: 2,
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: _buildSendButton(
+            onPressed: _submitting ? null : _submitText,
+            busy: _submitting,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── 음성 입력 모드 (FastAPI `POST /api/insights/query-voice`) ─────────────
+
+  Widget _buildVoiceMode() {
+    return Column(
+      key: const ValueKey('voice'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          kIsWeb
+              ? '브라우저에서 마이크를 허용하면 녹음됩니다. (HTTPS 또는 localhost 필요)'
+              : '마이크로 녹음한 파일을 서버로 보내 분석합니다. (Whisper / 오디오 모델)',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.52),
+            fontSize: 13,
+            height: 1.4,
+            decoration: TextDecoration.none,
+            decorationColor: Colors.transparent,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: (_submitting || _isRecording || _micBusy)
+                    ? null
+                    : () {
+                        unawaited(_startRecording());
+                      },
+                icon: _micBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        Icons.fiber_manual_record,
+                        color: Colors.redAccent.withOpacity(0.9),
+                        size: 18,
+                      ),
+                label: Text(_micBusy ? '준비 중…' : '녹음 시작'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withOpacity(0.28)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: (!_isRecording || _submitting) ? null : _stopRecording,
+                icon: Icon(Icons.stop, color: _kPartitionAiCream.withOpacity(0.95)),
+                label: const Text('녹음 종료'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: BorderSide(color: Colors.white.withOpacity(0.28)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_isRecording) ...[
+          const SizedBox(height: 10),
+          Text(
+            '녹음 중 · ${_recordingSecs}s',
+            style: TextStyle(
+              color: _kPartitionAiCream.withOpacity(0.9),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              decoration: TextDecoration.none,
+              decorationColor: Colors.transparent,
+            ),
+          ),
+        ],
+        if (_recordedPath != null) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.greenAccent.withOpacity(0.85), size: 18),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '녹음이 준비되었습니다.',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.78),
+                    fontSize: 13,
+                    decoration: TextDecoration.none,
+                    decorationColor: Colors.transparent,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: _submitting ? null : _discardRecording,
+                child: const Text('다시 녹음'),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.07),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.18)),
+          ),
+          child: TextField(
+            controller: _voiceAuxCtrl,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              decoration: TextDecoration.none,
+              decorationColor: Colors.transparent,
+            ),
+            decoration: InputDecoration(
+              hintText: '같이 보낼 질문 (선택, 텍스트+음성)',
+              hintStyle: TextStyle(
+                color: Colors.white.withOpacity(0.32),
+                fontSize: 14,
+              ),
+              contentPadding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              border: InputBorder.none,
+            ),
+            maxLines: 2,
+            minLines: 1,
+            cursorColor: _kPartitionAiCream,
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: _buildSendButton(
+            onPressed: _submitting ? null : _submitVoice,
+            busy: _submitting,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSendButton({VoidCallback? onPressed, bool busy = false}) {
+    return ElevatedButton(
+      onPressed: busy ? null : onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _kPartitionAiCream,
+        foregroundColor: const Color(0xFF1A2F42),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        elevation: 0,
+      ),
+      child: busy
+          ? const SizedBox(
+              height: 22,
+              width: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: Color(0xFF1A2F42),
+              ),
+            )
+          : const Text(
+              '질문하기',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                decoration: TextDecoration.none,
+              ),
+            ),
+    );
+  }
 }

@@ -33,16 +33,29 @@ class ApiException implements Exception {
 
           if (code == 413) {
             errorMessage =
-                '이미지 용량이 서버 한도를 넘었어요. 영수증만 확대해 다시 촬영하거나, '
-                '용량이 작은 사진을 선택해 주세요. 계속되면 서버·nginx 업로드 제한을 늘려야 할 수 있어요.';
+                '파일 용량이 서버에서 허용하는 한도를 넘었습니다. (예: 음성 25MB, 이미지 업로드 제한)';
           } else {
             // 에러 응답 데이터 안전하게 파싱
             try {
               final responseData = error.response?.data;
               if (responseData is Map<String, dynamic>) {
-                errorMessage = responseData['message'] as String? ??
-                    responseData['error'] as String? ??
-                    '서버 오류가 발생했습니다.';
+                final detail = responseData['detail'];
+                if (detail is String && detail.trim().isNotEmpty) {
+                  errorMessage = detail.trim();
+                } else if (detail is List && detail.isNotEmpty) {
+                  final first = detail.first;
+                  if (first is Map<String, dynamic>) {
+                    final msg = first['msg']?.toString();
+                    if (msg != null && msg.isNotEmpty) {
+                      errorMessage = msg;
+                    }
+                  }
+                }
+                if (errorMessage == '서버 오류가 발생했습니다.') {
+                  errorMessage = responseData['message'] as String? ??
+                      responseData['error'] as String? ??
+                      '서버 오류가 발생했습니다.';
+                }
               } else if (responseData is String) {
                 final s = responseData.trim();
                 // HTML(nginx 오류 페이지 등)이면 본문 대신 코드만

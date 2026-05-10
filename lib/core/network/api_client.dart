@@ -46,7 +46,13 @@ class ApiClient {
               options.headers['Authorization'] = 'Bearer $token';
             }
           }
-          
+
+          // GET에는 본문이 없는데 `Content-Type: application/json`이 붙으면
+          // 일부 프록시·보안 장비가 요청을 잘못 해석하는 경우가 있어 제거합니다.
+          if (options.method.toUpperCase() == 'GET') {
+            options.headers.remove(Headers.contentTypeHeader);
+          }
+
           _logger.d('Request: ${options.method} ${options.path}');
           _logger.d('Request Data: ${options.data}');
           _logger.d('Request Headers: ${options.headers}');

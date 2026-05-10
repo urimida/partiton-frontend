@@ -11,6 +11,7 @@ import 'package:partition_app/features/partition/controllers/alarm_navigation_co
 import 'package:partition_app/features/partition/models/alarm_model.dart';
 import 'package:partition_app/features/partition/models/shared_expense_table_item.dart';
 import 'package:partition_app/features/partition/models/supply_purchase_model.dart';
+import 'package:partition_app/features/partition/models/utility_bill_model.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_filter_chip.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_manual_modal.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_item_detail_sheet.dart';
@@ -45,9 +46,9 @@ class _PartitionSharedExpenseScreenState
   /// 물품/공과금 칩 한 줄 높이(패딩 포함 추정) — 대칭 간격 계산용
   static const double _filterChipRowHeight = 46.0;
   /// 남는 세로가 적을 때도 헤더↔칩↔카드 사이가 0으로 붙지 않도록 하는 최소 간격
-  static const double _chipOuterVerticalMinGap = 18.0;
+  static const double _chipOuterVerticalMinGap = 9.0;
   /// `band`에서 나눈 대칭 여백에 곱함 (1.0 = 남는 높이를 그대로 위·아래에 분배)
-  static const double _chipVerticalSpacingScale = 1.0;
+  static const double _chipVerticalSpacingScale = 0.5;
   static const double _spacingSmall = 10.0;
   static const double _spacingMedium = 16.0;
   static const double _spacingLarge = 20.0;
@@ -248,35 +249,90 @@ class _PartitionSharedExpenseScreenState
   }
 
   Future<void> _showBillSettlementFromAlarm(int settlementId) async {
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF2A2A2A),
-        title: const Text(
-          '공과금 정산 알림',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Text(
-          '정산번호 $settlementId 과(와) 연결된 알림입니다.\n'
-          '아래에서 공과금 정산 화면을 열 수 있습니다.',
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('닫기'),
+    try {
+      final detail =
+          await _utilityBillService.fetchBillSettlementDetail(settlementId);
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF2A2A2A),
+          title: Text(
+            '공과금 정산 #${detail.settlementId}',
+            style: const TextStyle(color: Colors.white),
           ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _showUtilityBillSettlementFlow();
-            },
-            child: const Text('공과금 정산 열기'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '총액 ${detail.totalAmount}원 · 1인 ${detail.amountPerMember}원 · '
+                  '완료 ${detail.isConfirmed ? "예" : "아니오"}',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 12),
+                ...detail.items.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(
+                      '${e.utilityTypeName} · ${e.amount}원',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
-      ),
-    );
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('닫기'),
+            ),
+            if (!detail.isConfirmed)
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    await _utilityBillService.confirmBillSettlement(
+                      settlementId,
+                    );
+                    if (!mounted) return;
+                    await _loadUtilityBills();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('정산을 완료했습니다.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  } catch (e) {
+                    if (!mounted) return;
+                    final msg =
+                        e is ApiException ? e.message : '정산 완료에 실패했습니다.';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(msg),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                },
+                child: const Text(
+                  '정산 완료',
+                  style: TextStyle(color: Colors.amberAccent),
+                ),
+              ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is ApiException ? e.message : '정산 정보를 불러오지 못했습니다.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+      );
+    }
   }
 
   @override
@@ -368,8 +424,15 @@ class _PartitionSharedExpenseScreenState
       );
       if (!mounted) return;
       setState(() {
-        _utilityExpenseItems =
-            bills.map((e) => e.toSharedExpenseTableItem()).toList();
+        final items = bills.map((e) => e.toSharedExpenseTableItem()).toList();
+        items.sort((a, b) {
+          final dueDateA =
+              utilityBillNextDueDate(_startDate, a.utilityPayDay ?? 32);
+          final dueDateB =
+              utilityBillNextDueDate(_startDate, b.utilityPayDay ?? 32);
+          return dueDateA.compareTo(dueDateB);
+        });
+        _utilityExpenseItems = items;
         _utilityBillsLoading = false;
         _clampTablePageIndex();
       });
@@ -810,7 +873,7 @@ class _PartitionSharedExpenseScreenState
                   symmetricPadFull * _chipVerticalSpacingScale;
               final chipOuterGap = math.max(
                 _chipOuterVerticalMinGap,
-                symmetricPad + 3,
+                symmetricPad + 1.5,
               );
 
               return ListView(
@@ -991,7 +1054,7 @@ class _PartitionSharedExpenseScreenState
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Center(
               child: Text(
-                isUtility ? '공용 소비 공과금 관리' : '공용 소비 물품 관리',
+                isUtility ? '공과금 관리' : '공용 물품 관리',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 19,
@@ -1925,6 +1988,12 @@ class _PartitionSharedExpenseScreenState
         fetchSettlementListViaApi: api,
         initialRangeStart: _startDate,
         initialRangeEnd: _endDate,
+        onFinished: api
+            ? () {
+                if (!mounted) return;
+                _loadUtilityBills();
+              }
+            : null,
       ),
     );
   }
@@ -2177,46 +2246,46 @@ List<SharedExpenseTableItem> _dummyItemsForSharedExpenseTable(int filterIndex) {
   if (isUtility) {
     return [
       const SharedExpenseTableItem(
-          name: '월세', date: '6일 뒤', amount: '60만원', quantity: '고정'),
-      const SharedExpenseTableItem(
-          name: '수도세',
-          date: '10일 뒤',
-          amount: '알 수 없음',
-          quantity: '후불'),
-      const SharedExpenseTableItem(
-          name: '전기세',
-          date: '15일 뒤',
-          amount: '45,000원',
-          quantity: '자동이체'),
-      const SharedExpenseTableItem(
-          name: '가스세',
-          date: '20일 뒤',
-          amount: '30,000원',
-          quantity: '자동이체'),
-      const SharedExpenseTableItem(
-          name: '관리비', date: '12일 뒤', amount: '15만원', quantity: '고정'),
-      const SharedExpenseTableItem(
-          name: '인터넷',
-          date: '8일 뒤',
-          amount: '33,000원',
-          quantity: '자동이체'),
-      const SharedExpenseTableItem(
           name: 'TV 수신료',
-          date: '1일 뒤',
+          date: '매달 1일',
           amount: '2,500원',
           quantity: '자동이체'),
       const SharedExpenseTableItem(
-          name: '건물 보험',
-          date: '25일 뒤',
-          amount: '12,000원',
-          quantity: '연납'),
+          name: '주차비', date: '매달 5일', amount: '50,000원', quantity: '고정'),
       const SharedExpenseTableItem(
-          name: '주차비', date: '5일 뒤', amount: '50,000원', quantity: '고정'),
+          name: '월세', date: '매달 6일', amount: '60만원', quantity: '고정'),
+      const SharedExpenseTableItem(
+          name: '인터넷',
+          date: '매달 8일',
+          amount: '33,000원',
+          quantity: '자동이체'),
+      const SharedExpenseTableItem(
+          name: '수도세',
+          date: '매달 10일',
+          amount: '알 수 없음',
+          quantity: '후불'),
+      const SharedExpenseTableItem(
+          name: '관리비', date: '매달 12일', amount: '15만원', quantity: '고정'),
+      const SharedExpenseTableItem(
+          name: '전기세',
+          date: '매달 15일',
+          amount: '45,000원',
+          quantity: '자동이체'),
       const SharedExpenseTableItem(
           name: '공용 전기',
-          date: '18일 뒤',
+          date: '매달 18일',
           amount: '8,200원',
           quantity: '후불'),
+      const SharedExpenseTableItem(
+          name: '가스세',
+          date: '매달 20일',
+          amount: '30,000원',
+          quantity: '자동이체'),
+      const SharedExpenseTableItem(
+          name: '건물 보험',
+          date: '매달 25일',
+          amount: '12,000원',
+          quantity: '연납'),
     ];
   }
   return [
@@ -2466,7 +2535,7 @@ class _SettlementSelectableLine {
   });
 }
 
-/// 공용 구매 물품 정산 요청: 기간·항목(GET 정산 목록) → 인원 → 정산 요청(POST) → 완료(PATCH)
+/// 공용 구매 물품 정산 요청: 기간·항목(GET 정산 목록) → 인원 → 정산 요청(POST) 후 닫기 (공과금 정산과 동일)
 class _SharedExpenseSettlementFlowDialog extends StatefulWidget {
   const _SharedExpenseSettlementFlowDialog({
     required this.initialRangeStart,
@@ -2487,7 +2556,7 @@ class _SharedExpenseSettlementFlowDialog extends StatefulWidget {
 
 class _SharedExpenseSettlementFlowDialogState
     extends State<_SharedExpenseSettlementFlowDialog> {
-  /// 0: 항목 선택, 1: 정산할 인원, 2: 요청 결과·정산 완료 처리
+  /// 0: 항목 선택, 1: 정산할 인원
   int _step = 0;
 
   late DateTime _rangeStart;
@@ -2502,9 +2571,7 @@ class _SharedExpenseSettlementFlowDialogState
   final List<TextEditingController> _memberAmountCtrls = [];
   bool _loadingMembers = true;
 
-  SupplySettlementRequestResult? _requestResult;
   bool _submittingSettlementRequest = false;
-  bool _confirmingSettlement = false;
 
   final AuthService _authService = AuthService();
   final SupplyService _supplyService = SupplyService();
@@ -3135,7 +3202,9 @@ class _SharedExpenseSettlementFlowDialogState
                   ),
                 ),
                 IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: _submittingSettlementRequest
+                      ? null
+                      : () => Navigator.of(context).pop(),
                   icon: Icon(
                     Icons.close_rounded,
                     color: Colors.white.withOpacity(0.9),
@@ -3207,8 +3276,7 @@ class _SharedExpenseSettlementFlowDialogState
             ],
             const SizedBox(height: 20),
             PrimaryButton(
-              label:
-                  _submittingSettlementRequest ? '요청 중...' : '정산 요청 보내기',
+              label: _submittingSettlementRequest ? '요청 중...' : '정산하기',
               enabled: !_submittingSettlementRequest && !_loadingMembers,
               onPressed: () async {
                 if (_loadingMembers || _submittingSettlementRequest) return;
@@ -3272,264 +3340,39 @@ class _SharedExpenseSettlementFlowDialogState
                   }
                 }
 
+                final messenger = ScaffoldMessenger.of(context);
                 setState(() => _submittingSettlementRequest = true);
                 try {
-                  final result = await _supplyService.requestSettlement(
+                  await _supplyService.requestSettlement(
                     purchaseIds: purchaseIds,
                     memberIds: memberIds,
                   );
-                  if (!mounted) return;
-                  setState(() {
-                    _submittingSettlementRequest = false;
-                    _requestResult = result;
-                    _step = 2;
-                    _confirmingSettlement = false;
-                  });
-                } on ApiException catch (e) {
-                  if (mounted) {
-                    setState(() => _submittingSettlementRequest = false);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(e.message),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStepConfirm(BuildContext context) {
-    final res = _requestResult;
-    if (res == null) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          '정산 요약을 불러올 수 없어요.',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.75),
-            fontSize: 14,
-            fontFamily: 'Pretendard Variable',
-          ),
-        ),
-      );
-    }
-
-    final itemsPreview = res.items
-        .map(
-          (e) =>
-              '· ${e.itemName} · ${_formatKrwSettlement(e.amount)}원',
-        )
-        .join('\n');
-    final membersPreview = res.members
-        .map(
-          (m) => '· ${m.name}: ${_formatKrwSettlement(m.amount)}원',
-        )
-        .join('\n');
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                IconButton(
-                  onPressed: _confirmingSettlement
-                      ? null
-                      : () => setState(() {
-                            _step = 1;
-                            _requestResult = null;
-                          }),
-                  icon: Icon(
-                    Icons.arrow_back_ios_new_rounded,
-                    color: Colors.white.withOpacity(0.9),
-                    size: 20,
-                  ),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 40,
-                    height: 40,
-                  ),
-                ),
-                const Expanded(
-                  child: Text(
-                    '정산 요청 완료',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      fontFamily: 'Pretendard Variable',
-                      height: 1.2,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: _confirmingSettlement
-                      ? null
-                      : () => Navigator.of(context).pop(),
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color: Colors.white.withOpacity(0.9),
-                    size: 22,
-                  ),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(
-                    width: 40,
-                    height: 40,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '서버에 정산 요청이 접수되었습니다.\n금액을 확인한 뒤 「정산 완료 처리」를 눌러 마무리하세요.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.88),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                fontFamily: 'Pretendard Variable',
-                height: 1.35,
-              ),
-            ),
-            const SizedBox(height: 18),
-            FrostedPanel(
-              borderRadius: BorderRadius.circular(18),
-              backgroundOpacity: 0.08,
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '정산 ID ${res.settlementId}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'Pretendard Variable',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '합계 ${_formatKrwSettlement(res.totalAmount)}원 · '
-                    '1인 ${_formatKrwSettlement(res.amountPerMember)}원 '
-                    '(${res.memberCount}명)',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.88),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      fontFamily: 'Pretendard Variable',
-                      height: 1.35,
-                    ),
-                  ),
-                  if (itemsPreview.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      '포함 품목',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.55),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Pretendard Variable',
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      itemsPreview,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: 12,
-                        height: 1.45,
-                        fontFamily: 'Pretendard Variable',
-                      ),
-                    ),
-                  ],
-                  if (membersPreview.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      '멤버별',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.55),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Pretendard Variable',
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      membersPreview,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: 12,
-                        height: 1.45,
-                        fontFamily: 'Pretendard Variable',
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 22),
-            PrimaryButton(
-              label: _confirmingSettlement ? '처리 중...' : '정산 완료 처리',
-              enabled: !_confirmingSettlement,
-              onPressed: () async {
-                final sid = res.settlementId;
-                if (sid <= 0) return;
-                setState(() => _confirmingSettlement = true);
-                try {
-                  await _supplyService.confirmSettlement(sid);
-                  if (!mounted) return;
+                  if (!context.mounted) return;
                   widget.onFinished?.call();
-                  final messenger = ScaffoldMessenger.maybeOf(context);
                   Navigator.of(context).pop();
-                  messenger?.showSnackBar(
+                  messenger.showSnackBar(
                     const SnackBar(
-                      content: Text('정산 완료 처리했어요.'),
+                      content: Text(
+                        '정산 요청을 보냈어요. 그룹원에게 알림이 전달됩니다.',
+                      ),
                       behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 3),
                     ),
                   );
                 } on ApiException catch (e) {
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(e.message),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } finally {
                   if (mounted) {
-                    setState(() => _confirmingSettlement = false);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(e.message),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
+                    setState(() => _submittingSettlementRequest = false);
                   }
                 }
               },
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _confirmingSettlement
-                  ? null
-                  : () {
-                      widget.onFinished?.call();
-                      Navigator.of(context).pop();
-                    },
-              child: Text(
-                '나중에 완료하기',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.72),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  fontFamily: 'Pretendard Variable',
-                ),
-              ),
             ),
           ],
         ),
@@ -3549,9 +3392,7 @@ class _SharedExpenseSettlementFlowDialogState
       ),
       child: _step == 0
           ? _buildStepSelect(context)
-          : _step == 1
-              ? _buildStepMembers(context)
-              : _buildStepConfirm(context),
+          : _buildStepMembers(context),
     );
   }
 }
@@ -3570,12 +3411,15 @@ class _UtilityBillSettlementFlowDialog extends StatefulWidget {
   final bool fetchSettlementListViaApi;
   final DateTime? initialRangeStart;
   final DateTime? initialRangeEnd;
+  /// POST 정산 요청 성공 후 부모가 목록을 다시 불러올 때
+  final VoidCallback? onFinished;
 
   const _UtilityBillSettlementFlowDialog({
     required this.fallbackItems,
     this.fetchSettlementListViaApi = false,
     this.initialRangeStart,
     this.initialRangeEnd,
+    this.onFinished,
   });
 
   @override
@@ -3601,6 +3445,10 @@ class _UtilityBillSettlementFlowDialogState
   List<bool> _memberSelected = [];
   final List<TextEditingController> _memberAmountCtrls = [];
   bool _loadingMembers = true;
+  List<HouseholdMemberBrief> _memberBriefs = [];
+  bool _submittingBillSettlement = false;
+  BillSettlementRequestResult? _postedRequestResult;
+  bool _confirmingBillSettlement = false;
 
   final AuthService _authService = AuthService();
   final UtilityBillService _utilityBillService = UtilityBillService();
@@ -3710,16 +3558,32 @@ class _UtilityBillSettlementFlowDialogState
   }
 
   Future<void> _loadMembers() async {
-    final names = await _authService.fetchHouseholdMemberNames();
-    if (!mounted) return;
-    setState(() {
-      _memberNames = names;
-      _memberSelected = List<bool>.filled(names.length, true);
-      _loadingMembers = false;
-      _recalculatePerPerson();
-      _ensureMemberAmountControllers();
-      _syncMemberAmountFields();
-    });
+    if (widget.fetchSettlementListViaApi) {
+      final briefs = await _authService.fetchHouseholdMembers();
+      if (!mounted) return;
+      setState(() {
+        _memberBriefs = briefs;
+        _memberNames = briefs.map((e) => e.name).toList();
+        _memberSelected =
+            List<bool>.filled(_memberNames.length, _memberNames.isNotEmpty);
+        _loadingMembers = false;
+        _recalculatePerPerson();
+        _ensureMemberAmountControllers();
+        _syncMemberAmountFields();
+      });
+    } else {
+      final names = await _authService.fetchHouseholdMemberNames();
+      if (!mounted) return;
+      setState(() {
+        _memberBriefs = [];
+        _memberNames = names;
+        _memberSelected = List<bool>.filled(names.length, names.isNotEmpty);
+        _loadingMembers = false;
+        _recalculatePerPerson();
+        _ensureMemberAmountControllers();
+        _syncMemberAmountFields();
+      });
+    }
   }
 
   int _getSelectedMemberCount() {
@@ -4300,9 +4164,10 @@ class _UtilityBillSettlementFlowDialogState
             ],
             const SizedBox(height: 20),
             PrimaryButton(
-              label: '정산하기',
-              onPressed: () {
-                if (_loadingMembers) return;
+              label: _submittingBillSettlement ? '요청 중...' : '정산하기',
+              enabled: !_submittingBillSettlement && !_loadingMembers,
+              onPressed: () async {
+                if (_loadingMembers || _submittingBillSettlement) return;
                 if (_getSelectedMemberCount() == 0) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -4314,14 +4179,250 @@ class _UtilityBillSettlementFlowDialogState
                 }
                 _recalculatePerPerson();
                 final messenger = ScaffoldMessenger.of(context);
-                Navigator.of(context).pop();
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('정산 요청 알림을 보냈어요.'),
-                    behavior: SnackBarBehavior.floating,
-                    duration: Duration(seconds: 3),
+
+                if (!widget.fetchSettlementListViaApi) {
+                  Navigator.of(context).pop();
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('정산 요청 알림을 보냈어요.'),
+                      behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                  return;
+                }
+
+                if (_memberBriefs.length != _memberNames.length ||
+                    _memberBriefs.isEmpty) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        '하우스 멤버 정보가 없어 정산 요청을 보낼 수 없어요.',
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
+                final billIds = <int>[];
+                for (final line in _lines) {
+                  if (!line.selected) continue;
+                  final bid = line.item.billId;
+                  if (bid == null || bid <= 0) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          '선택한 항목 중 서버에 등록되지 않은 공과금이 있어요.',
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+                  billIds.add(bid);
+                }
+
+                final memberIds = <int>[];
+                for (var i = 0; i < _memberBriefs.length; i++) {
+                  if (i < _memberSelected.length && _memberSelected[i]) {
+                    memberIds.add(_memberBriefs[i].userId);
+                  }
+                }
+                if (memberIds.isEmpty) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('정산 대상 멤버를 선택해주세요.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
+                setState(() => _submittingBillSettlement = true);
+                try {
+                  final result = await _utilityBillService.requestBillSettlement(
+                    billIds: billIds,
+                    memberIds: memberIds,
+                  );
+                  if (!context.mounted) return;
+                  if (result.settlementId <= 0) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          '정산 요청은 되었지만 번호를 확인하지 못했어요. 목록을 새로고침해 주세요.',
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+                  widget.onFinished?.call();
+                  setState(() {
+                    _postedRequestResult = result;
+                    _step = 2;
+                  });
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        '정산 요청을 보냈어요. 그룹원에게 알림이 전달됩니다.',
+                      ),
+                      behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                } on ApiException catch (e) {
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(e.message),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } finally {
+                  if (mounted) {
+                    setState(() => _submittingBillSettlement = false);
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepAfterRequest(BuildContext context) {
+    final r = _postedRequestResult;
+    if (r == null) {
+      return const SizedBox.shrink();
+    }
+    final messenger = ScaffoldMessenger.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(width: 40),
+                const Expanded(
+                  child: Text(
+                    '정산 요청 완료',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Pretendard Variable',
+                    ),
                   ),
-                );
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '내용을 확인한 뒤 정산 완료를 눌러 주세요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.85),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Pretendard Variable',
+                height: 1.22,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '총액 ${_formatKrw(r.totalAmount)}원 · 1인 ${_formatKrw(r.amountPerMember)}원 · '
+              '${r.memberCount}명',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.92),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Pretendard Variable',
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 14),
+            ...r.items.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: FrostedPanel(
+                  borderRadius: BorderRadius.circular(18),
+                  backgroundOpacity: 0.08,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Text(
+                    '${e.utilityTypeName} · ${_formatKrw(e.amount)}원',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            PrimaryButton(
+              label: _confirmingBillSettlement ? '처리 중...' : '정산 완료',
+              enabled: !_confirmingBillSettlement,
+              onPressed: () async {
+                if (_confirmingBillSettlement) return;
+                setState(() => _confirmingBillSettlement = true);
+                try {
+                  await _utilityBillService.confirmBillSettlement(
+                    r.settlementId,
+                  );
+                  if (!context.mounted) return;
+                  widget.onFinished?.call();
+                  Navigator.of(context).pop();
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('정산을 완료했습니다.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } on ApiException catch (e) {
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(e.message),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } catch (_) {
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('정산 완료에 실패했습니다.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } finally {
+                  if (mounted) {
+                    setState(() => _confirmingBillSettlement = false);
+                  }
+                }
               },
             ),
           ],
@@ -4342,7 +4443,9 @@ class _UtilityBillSettlementFlowDialogState
       ),
       child: _step == 0
           ? _buildStepSelect(context)
-          : _buildStepMembers(context),
+          : _step == 1
+              ? _buildStepMembers(context)
+              : _buildStepAfterRequest(context),
     );
   }
 }

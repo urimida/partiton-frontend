@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,7 +7,6 @@ import 'package:partition_app/features/partition/models/reservation_item_model.d
 import 'package:partition_app/features/partition/models/reservation_booking_model.dart';
 import 'package:partition_app/features/partition/services/reservation_items_service.dart';
 import 'package:partition_app/features/partition/services/reservations_service.dart';
-import 'package:partition_app/features/partition/widgets/shared_expense_filter_chip.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
 import 'package:partition_app/shared/widgets/glassmorphic_date_picker.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
@@ -61,27 +59,6 @@ class _ReservationFormDialogOutcome {
       const _ReservationFormDialogOutcome._(serverBookingCreated: true);
 }
 
-class _BoardChallengeRow {
-  final String content;
-  final String start;
-  final String complete;
-  final bool achieved;
-
-  const _BoardChallengeRow(
-    this.content,
-    this.start,
-    this.complete,
-    this.achieved,
-  );
-}
-
-const List<_BoardChallengeRow> _kBoardDummyChallengeRows = [
-  _BoardChallengeRow('', '', '', true),
-  _BoardChallengeRow('', '', '', false),
-  _BoardChallengeRow('', '', '', true),
-  _BoardChallengeRow('', '', '', false),
-  _BoardChallengeRow('', '', '', true),
-];
 
 List<List<T>> _paginateRows<T>(List<T> items, int pageSize) {
   if (items.isEmpty) {
@@ -95,7 +72,7 @@ List<List<T>> _paginateRows<T>(List<T> items, int pageSize) {
   return pages;
 }
 
-/// 공용소비와 동일한 글래스·칩·표 패턴의 게시판 (예약 / 챌린지)
+/// 공용소비와 동일한 글래스·칩·표 패턴의 게시판 (예약 관리 / 예약게시판)
 class PartitionBoardScreen extends StatefulWidget {
   const PartitionBoardScreen({super.key});
 
@@ -109,9 +86,6 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
   static const double _contentPaddingBottom = 16.0;
   static const double _scrollBottomInsetForTabBar = 132.0;
   static const double _scrollExtraTailSpace = 56.0;
-  static const double _filterChipRowHeight = 46.0;
-  static const double _chipOuterVerticalMinGap = 18.0;
-  static const double _chipVerticalSpacingScale = 1.0;
   static const double _spacingSmall = 10.0;
   static const double _spacingMedium = 16.0;
   static const double _spacingLarge = 20.0;
@@ -122,7 +96,6 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
   static const int _itemsPerPage = 5;
   static const double _tablePageViewHeight = 132.0;
 
-  int _filterIndex = 0;
   late DateTime _startDate;
   late DateTime _endDate;
   final PageController _pageController = PageController();
@@ -131,7 +104,6 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
   List<_BoardReservationRow> _reservationRows = [];
   /// 로그인·실데이터: `GET /reservations/items` — 예약하기·물품 수정 다이얼로그용
   List<_BoardReservationRow> _catalogFromApi = [];
-  List<_BoardChallengeRow> _challengeRows = [];
   bool? _boardDummySynced;
 
   bool _reservationSelectionMode = false;
@@ -143,7 +115,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
     super.initState();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    // 예약·챌린지 공통: 오늘 포함 최근 7일 (이전 6일 + 오늘)
+    // 예약 기간: 오늘 포함 최근 7일 (이전 6일 + 오늘)
     _endDate = today;
     _startDate = today.subtract(const Duration(days: 6));
     _reservationEndCountdownTimer = Timer.periodic(
@@ -164,11 +136,9 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
       if (useDummy) {
         _catalogFromApi = [];
         _reservationRows = _buildDummyReservationRows();
-        _challengeRows = List<_BoardChallengeRow>.from(_kBoardDummyChallengeRows);
       } else {
         _catalogFromApi = [];
         _reservationRows = [];
-        _challengeRows = [];
       }
       _pageIndex = 0;
     });
@@ -254,7 +224,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
   }
 
   void _onReservationEndCountdownTick(Timer timer) {
-    if (!mounted || _filterIndex != 0) return;
+    if (!mounted) return;
     if (!_needsReservationEndColumnTick()) return;
     setState(() {});
   }
@@ -299,7 +269,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
             .toList();
         _reservationRows =
             reservations.map(_rowFromReservationEntry).toList();
-        _clampReservationPageIndex();
+        _clampPageIndex();
       });
       _schedulePageJump();
     } catch (e) {
@@ -326,7 +296,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
       setState(() {
         _reservationRows =
             reservations.map(_rowFromReservationEntry).toList();
-        _clampReservationPageIndex();
+        _clampPageIndex();
       });
       _schedulePageJump();
     } catch (e) {
@@ -362,9 +332,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_pageController.hasClients) {
-        final pages = _filterIndex == 0
-            ? _paginateRows(_reservationRows, _itemsPerPage)
-            : _paginateRows(_challengeRows, _itemsPerPage);
+        final pages = _paginateRows(_reservationRows, _itemsPerPage);
         final maxPage = pages.isEmpty ? 0 : pages.length - 1;
         final ix = _pageIndex.clamp(0, maxPage);
         _pageController.jumpToPage(ix);
@@ -413,33 +381,6 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
     }
   }
 
-  /// 공용소비 `_estimateMainCardContentHeightForFilter` + 하단 버튼 영역과 동일 기준으로
-  /// 칩 위·아래 대칭 여백을 맞춤 (게시판만 따로 짧게 잡히면 간격이 넓어 보임)
-  double _belowChipsContentHeightMatchingSharedExpense() {
-    const outerPadV = 20.0 + 18.0;
-    const titleBlock = 26.0 + _spacingMedium;
-    const dateRowH = 52.0;
-    const beforeTable = _spacingLarge;
-    const tablePanel = 6.0 +
-        8.0 +
-        44.0 +
-        8.0 +
-        _tablePageViewHeight +
-        8.0 +
-        36.0 +
-        12.0 +
-        32.0;
-
-    // 공용소비: 물품·공과금 모두 날짜 아래 정산 버튼 한 줄, 하단 액션 버튼 1개
-    final cardH = outerPadV +
-        titleBlock +
-        dateRowH +
-        (_spacingMedium + 46.0) +
-        beforeTable +
-        tablePanel;
-    return cardH + _spacingSmall + 46 + 12;
-  }
-
   @override
   Widget build(BuildContext context) {
     final scrollBottomPadding = _contentPaddingBottom +
@@ -451,57 +392,23 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
       children: [
         _buildHeader(),
         Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final mq = MediaQuery.sizeOf(context);
-              final rawH = constraints.maxHeight;
-              final viewportH = (constraints.hasBoundedHeight &&
-                      rawH.isFinite &&
-                      rawH > 0)
-                  ? rawH
-                  : (mq.height -
-                          _headerHeight -
-                          MediaQuery.paddingOf(context).top -
-                          MediaQuery.paddingOf(context).bottom -
-                          150)
-                      .clamp(120.0, 100000.0);
-              final belowChipsContentH =
-                  _belowChipsContentHeightMatchingSharedExpense();
-              final band = viewportH -
-                  belowChipsContentH -
-                  _contentPaddingBottom;
-              final symmetricPadFull =
-                  band > _filterChipRowHeight ? (band - _filterChipRowHeight) / 2 : 0.0;
-              final symmetricPad =
-                  symmetricPadFull * _chipVerticalSpacingScale;
-              final chipOuterGap = math.max(
-                _chipOuterVerticalMinGap,
-                symmetricPad + 3,
-              );
-
-              return ListView(
-                physics: const BouncingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
-                ),
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: EdgeInsets.fromLTRB(
-                  _contentPaddingHorizontal,
-                  0,
-                  _contentPaddingHorizontal,
-                  scrollBottomPadding,
-                ),
-                children: [
-                  SizedBox(height: chipOuterGap),
-                  _buildFilterChips(),
-                  SizedBox(height: chipOuterGap),
-                  _buildMainCard(),
-                  const SizedBox(height: _spacingSmall),
-                  ..._buildActionButtons(),
-                  const SizedBox(height: 12),
-                ],
-              );
-            },
+          child: ListView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(
+              _contentPaddingHorizontal,
+              _spacingMedium,
+              _contentPaddingHorizontal,
+              scrollBottomPadding,
+            ),
+            children: [
+              _buildMainCard(),
+              const SizedBox(height: _spacingSmall),
+              ..._buildActionButtons(),
+              const SizedBox(height: 12),
+            ],
           ),
         ),
       ],
@@ -573,54 +480,9 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
     );
   }
 
-  Widget _buildFilterChips() {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: SharedExpenseFilterChip(
-            label: '예약',
-            selected: _filterIndex == 0,
-            width: double.infinity,
-            horizontalPadding: 14,
-            onTap: () {
-              setState(() {
-                _filterIndex = 0;
-                _pageIndex = 0;
-                _reservationSelectionMode = false;
-                _selectedReservationIndices.clear();
-              });
-              _schedulePageJump();
-            },
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: SharedExpenseFilterChip(
-            label: '챌린지',
-            selected: _filterIndex == 1,
-            width: double.infinity,
-            horizontalPadding: 14,
-            onTap: () {
-              setState(() {
-                _filterIndex = 1;
-                _pageIndex = 0;
-                _reservationSelectionMode = false;
-                _selectedReservationIndices.clear();
-              });
-              _schedulePageJump();
-            },
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildMainCard() {
-    final reservation = _filterIndex == 0;
-    final pages = reservation
-        ? _paginateRows(_reservationRows, _itemsPerPage)
-        : _paginateRows(_challengeRows, _itemsPerPage);
+    final pages = _paginateRows(_reservationRows, _itemsPerPage);
     final pageSafe = _pageIndex.clamp(0, pages.length - 1).toInt();
 
     return FrostedPanel(
@@ -635,7 +497,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Center(
               child: Text(
-                reservation ? '예약 관리' : '챌린지 관리',
+                '예약 관리',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 19,
@@ -655,9 +517,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
             ),
           ),
           const SizedBox(height: _spacingMedium),
-          if (reservation) ...[
-            _buildDateRangeGlassRow(),
-          ],
+          _buildDateRangeGlassRow(),
           const SizedBox(height: _spacingLarge),
           FrostedPanel(
             borderRadius: BorderRadius.circular(20),
@@ -668,9 +528,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _buildTableHeader(
-                  reservation: reservation,
-                  selectionMode:
-                      reservation && _reservationSelectionMode,
+                  selectionMode: _reservationSelectionMode,
                 ),
                 const SizedBox(height: 8),
                 SizedBox(
@@ -683,18 +541,13 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
                     onPageChanged: (i) => setState(() => _pageIndex = i),
                     itemCount: pages.length,
                     itemBuilder: (context, pageIndex) {
-                      if (reservation) {
-                        return _buildReservationPage(
-                          pages[pageIndex] as List<_BoardReservationRow>,
-                          pageIndex: pageIndex,
-                          itemsPerPage: _itemsPerPage,
-                          selectionMode: _reservationSelectionMode,
-                          selectedIndices: _selectedReservationIndices,
-                          onToggleRow: _toggleReservationRowSelection,
-                        );
-                      }
-                      return _buildChallengePage(
-                        pages[pageIndex] as List<_BoardChallengeRow>,
+                      return _buildReservationPage(
+                        pages[pageIndex],
+                        pageIndex: pageIndex,
+                        itemsPerPage: _itemsPerPage,
+                        selectionMode: _reservationSelectionMode,
+                        selectedIndices: _selectedReservationIndices,
+                        onToggleRow: _toggleReservationRowSelection,
                       );
                     },
                   ),
@@ -707,13 +560,11 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
               ],
             ),
           ),
-          if (reservation) ...[
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: _buildReservationTableToolbar(),
-            ),
-          ],
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: _buildReservationTableToolbar(),
+          ),
         ],
       ),
     );
@@ -819,7 +670,6 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
   );
 
   Widget _buildTableHeader({
-    required bool reservation,
     bool selectionMode = false,
   }) {
     const headerRowHeight = 34.0;
@@ -861,17 +711,15 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
       return w;
     }
 
-    final labels = reservation
-        ? ['내용', '예약 시간', '종료 시간', '예약자']
-        : ['내용', '시작', '완료', '달성 여부'];
-    final flexes = reservation ? [3, 3, 3, 2] : [3, 2, 2, 2];
+    const labels = ['내용', '예약 시간', '종료 시간', '예약자'];
+    const flexes = [3, 3, 3, 2];
 
     return SizedBox(
       height: headerRowHeight,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (reservation && selectionMode) ...[
+          if (selectionMode) ...[
             Expanded(
               flex: 1,
               child: Padding(
@@ -1054,122 +902,6 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
     );
   }
 
-  Widget _buildChallengePage(List<_BoardChallengeRow> rows) {
-    if (rows.isEmpty) {
-      return Center(
-        child: Text(
-          '챌린지가 없습니다',
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.45),
-            fontSize: 12,
-          ),
-        ),
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        for (final r in rows) _buildChallengeRow(r),
-      ],
-    );
-  }
-
-  Widget _buildChallengeRow(_BoardChallengeRow r) {
-    const padContent = 6.0;
-    const padRest = 4.0;
-
-    Widget fittedCell(String text, {required bool placeholder}) {
-      final style = _cellStyle.copyWith(
-        color: placeholder
-            ? Colors.white.withOpacity(0.35)
-            : Colors.white,
-      );
-      return Center(
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.center,
-          child: Text(
-            text,
-            maxLines: 1,
-            softWrap: false,
-            textAlign: TextAlign.center,
-            style: style,
-          ),
-        ),
-      );
-    }
-
-    final contentEmpty = r.content.isEmpty;
-    final startEmpty = r.start.isEmpty;
-    final completeEmpty = r.complete.isEmpty;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            flex: 3,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: padContent),
-              child: Text(
-                contentEmpty ? '—' : r.content,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: _cellStyle.copyWith(
-                  color: contentEmpty
-                      ? Colors.white.withOpacity(0.35)
-                      : Colors.white,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: padRest),
-              child: fittedCell(
-                startEmpty ? '—' : r.start,
-                placeholder: startEmpty,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: padRest),
-              child: fittedCell(
-                completeEmpty ? '—' : r.complete,
-                placeholder: completeEmpty,
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: padRest),
-              child: Center(
-                child: Icon(
-                  r.achieved
-                      ? Icons.check_circle_rounded
-                      : Icons.circle_outlined,
-                  size: 18,
-                  color: r.achieved
-                      ? Colors.white
-                      : Colors.white.withOpacity(0.4),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildPageControl({
     required int pageCount,
@@ -1374,7 +1106,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
     });
   }
 
-  void _clampReservationPageIndex() {
+  void _clampPageIndex() {
     final pages = _paginateRows(_reservationRows, _itemsPerPage);
     final maxP = pages.isEmpty ? 0 : pages.length - 1;
     if (_pageIndex > maxP) {
@@ -1432,7 +1164,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
         _reservationRows = next;
         _reservationSelectionMode = false;
         _selectedReservationIndices.clear();
-        _clampReservationPageIndex();
+        _clampPageIndex();
       });
       _schedulePageJump();
       if (mounted) {
@@ -1550,6 +1282,8 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
       builder: (ctx) => _ReservationFormDialog(
         reserverDisplayName: reserver,
         useDummyData: useDummy,
+        onOpenReservationItemManage:
+            useDummy ? null : _showReservationItemManageDialog,
       ),
     );
 
@@ -1572,7 +1306,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
       );
       setState(() {
         _reservationRows = [..._reservationRows, fixedRow];
-        _clampReservationPageIndex();
+        _clampPageIndex();
         final pages = _paginateRows(_reservationRows, _itemsPerPage);
         _pageIndex = pages.isEmpty ? 0 : pages.length - 1;
       });
@@ -1584,7 +1318,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
       await _loadReservationsListOnly();
       if (!mounted) return;
       setState(() {
-        _clampReservationPageIndex();
+        _clampPageIndex();
         final pages = _paginateRows(_reservationRows, _itemsPerPage);
         _pageIndex = pages.isEmpty ? 0 : pages.length - 1;
       });
@@ -1621,32 +1355,17 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
   }
 
   List<Widget> _buildActionButtons() {
-    if (_filterIndex == 0) {
-      return [
-        PrimaryButton(
-          label: '예약하기',
-          enabled: !_reservationSelectionMode,
-          onPressed: _showReservationModal,
-        ),
-        const SizedBox(height: 10),
-        PrimaryButton(
-          label: '예약 물품 추가/수정하기',
-          enabled: !_reservationSelectionMode,
-          onPressed: _showReservationItemManageDialog,
-        ),
-      ];
-    }
     return [
       PrimaryButton(
-        label: '챌린지 추가하기',
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('챌린지 추가 (준비 중)'),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        },
+        label: '예약하기',
+        enabled: !_reservationSelectionMode,
+        onPressed: _showReservationModal,
+      ),
+      const SizedBox(height: 10),
+      PrimaryButton(
+        label: '예약 물품 추가/수정하기',
+        enabled: !_reservationSelectionMode,
+        onPressed: _showReservationItemManageDialog,
       ),
     ];
   }
@@ -1660,10 +1379,13 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
 class _ReservationFormDialog extends StatefulWidget {
   final String reserverDisplayName;
   final bool useDummyData;
+  /// 실서버: 예약 물품 추가/수정 다이얼로그(게시판과 동일). 닫힌 뒤 목록을 다시 불러온다.
+  final Future<void> Function()? onOpenReservationItemManage;
 
   const _ReservationFormDialog({
     required this.reserverDisplayName,
     required this.useDummyData,
+    this.onOpenReservationItemManage,
   });
 
   @override
@@ -1712,6 +1434,13 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
         _itemsLoading = false;
       });
     }
+  }
+
+  Future<void> _openReservationItemManage() async {
+    final open = widget.onOpenReservationItemManage;
+    if (open == null) return;
+    await open();
+    if (mounted) await _loadReservationItems();
   }
 
   @override
@@ -1967,29 +1696,6 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                       height: 1.35,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '예약자(예약하는 사람)는 본인(현재 로그인 계정)으로만 등록됩니다.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.58),
-                      fontSize: 11,
-                      fontFamily: 'Pretendard Variable',
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '예약자: ${widget.reserverDisplayName}',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.88),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: 'Pretendard Variable',
-                      height: 1.35,
-                    ),
-                  ),
                   const SizedBox(height: 14),
                   if (!widget.useDummyData) ...[
                     if (_itemsLoading)
@@ -2006,17 +1712,6 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                           ),
                         ),
                       ),
-                    Text(
-                      '예약 가능한 물품 목록에서 선택',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.68),
-                        fontSize: 11,
-                        fontFamily: 'Pretendard Variable',
-                        height: 1.35,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
                     FrostedPanel(
                       borderRadius: BorderRadius.circular(20),
                       backgroundOpacity: 0.1,
@@ -2028,7 +1723,7 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                           ? Padding(
                               padding: const EdgeInsets.all(12),
                               child: Text(
-                                '등록된 예약 물품이 없습니다.\n「예약 물품 추가/수정하기」에서 추가해 주세요.',
+                                '등록된 예약 물품이 없습니다.\n아래「예약 대상 물품 추가」로 등록해 주세요.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: Colors.white.withOpacity(0.55),
@@ -2096,6 +1791,15 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                                 },
                               ),
                             ),
+                    ),
+                    const SizedBox(height: 10),
+                    Center(
+                      child: PrimaryButton(
+                        label: '예약 대상 물품 추가',
+                        width: btnW,
+                        enabled: widget.onOpenReservationItemManage != null,
+                        onPressed: _openReservationItemManage,
+                      ),
                     ),
                     const SizedBox(height: 10),
                   ],

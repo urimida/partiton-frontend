@@ -10,7 +10,7 @@ DailyCalendarResponseModel _$DailyCalendarResponseModelFromJson(
         Map<String, dynamic> json) =>
     DailyCalendarResponseModel(
       isSuccess: json['isSuccess'] as bool,
-      code: json['code'] as String,
+      code: dailyCalendarApiString(json['code']),
       message: json['message'] as String,
       result: (json['result'] as List<dynamic>?)
           ?.map((e) => DailyCalendarItem.fromJson(e as Map<String, dynamic>))
@@ -30,11 +30,11 @@ Map<String, dynamic> _$DailyCalendarResponseModelToJson(
 
 DailyCalendarItem _$DailyCalendarItemFromJson(Map<String, dynamic> json) =>
     DailyCalendarItem(
-      category: json['category'] as String,
+      category: dailyCalendarApiString(json['category']),
       id: (json['id'] as num).toInt(),
-      title: json['title'] as String,
+      title: dailyCalendarApiString(json['title']),
       assigneeName: json['assigneeName'] as String?,
-      isCompleted: json['isCompleted'] as bool,
+      isCompleted: dailyCalendarApiBool(json['isCompleted']),
       isOwner: json['isOwner'] as bool?,
     );
 

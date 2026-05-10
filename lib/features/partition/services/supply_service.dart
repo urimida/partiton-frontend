@@ -50,7 +50,7 @@ class SupplyService {
   }
 
   /// 공용 구매 물품 **정산 대상** 조회
-  /// `GET /api/supplies/purchases/settlement?startDate=yyyy-MM-dd&endDate=yyyy-MM-dd`
+  /// `GET /api/supplies/settlement/purchases?startDate=yyyy-MM-dd&endDate=yyyy-MM-dd`
   /// (미정산 `UNSETTLED` 등 — 응답 형식은 [SupplyPurchasesListResult]).
   Future<SupplyPurchasesListResult> fetchSettlementPurchases({
     required String startDate,
@@ -63,6 +63,8 @@ class SupplyService {
           'startDate': startDate,
           'endDate': endDate,
         },
+        // 명세: GET — Dio 기본이 GET이나, 인프라 이슈 대비해 명시합니다.
+        options: Options(method: 'GET'),
       );
       final data = response.data;
       if (data is! Map<String, dynamic>) {

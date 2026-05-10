@@ -1,4 +1,5 @@
 import 'package:partition_app/features/partition/models/shared_expense_table_item.dart';
+import 'package:partition_app/features/partition/models/supply_purchase_model.dart';
 import 'package:partition_app/features/partition/utils/supply_purchase_input.dart';
 
 /// 해당 연·월에서 `payDay`에 맞는 달력상 납부일 (말일 초과 시 말일로 보정)
@@ -34,12 +35,9 @@ int utilityBillDaysUntilDue(DateTime reference, int payDayRaw) {
   return next.difference(t).inDays;
 }
 
-/// 표 납부일 열 — `5일 뒤`, `오늘`, `내일`
+/// 표 납부일 열 — `매달 22일` 형식
 String utilityBillRelativeDueLabel(DateTime reference, int payDayRaw) {
-  final d = utilityBillDaysUntilDue(reference, payDayRaw);
-  if (d <= 0) return '오늘';
-  if (d == 1) return '내일';
-  return '$d일 뒤';
+  return '매달 ${payDayRaw}일';
 }
 
 /// 목록·상세 `status` → 정산 완료 여부 (물품 구매와 동일 패턴)
@@ -307,6 +305,197 @@ class UtilityBillSettlementLine {
       billId: billId,
       utilityDueDateIso: iso,
       utilityPayDay: dt?.day,
+    );
+  }
+}
+
+/// POST `/api/bills/settlement` 성공 시 `result.items[]`
+class BillSettlementShareItem {
+  final int billId;
+  final String utilityTypeName;
+  final int amount;
+
+  const BillSettlementShareItem({
+    required this.billId,
+    required this.utilityTypeName,
+    required this.amount,
+  });
+
+  factory BillSettlementShareItem.fromJson(Map<String, dynamic> json) {
+    final name = json['utilityTypeName'] as String? ??
+        json['itemName'] as String? ??
+        json['name'] as String? ??
+        '';
+    return BillSettlementShareItem(
+      billId: (json['billId'] as num?)?.toInt() ?? 0,
+      utilityTypeName: name,
+      amount: (json['amount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// POST `/api/bills/settlement` 성공 시 `result`
+class BillSettlementRequestResult {
+  final int settlementId;
+  final int totalAmount;
+  final int memberCount;
+  final int amountPerMember;
+  final String settledAt;
+  final List<SettlementShareMember> members;
+  final List<BillSettlementShareItem> items;
+
+  const BillSettlementRequestResult({
+    required this.settlementId,
+    required this.totalAmount,
+    required this.memberCount,
+    required this.amountPerMember,
+    required this.settledAt,
+    required this.members,
+    required this.items,
+  });
+
+  factory BillSettlementRequestResult.fromJson(Map<String, dynamic> json) {
+    final rawM = json['members'];
+    final rawI = json['items'];
+    final members = <SettlementShareMember>[];
+    final items = <BillSettlementShareItem>[];
+    if (rawM is List) {
+      for (final e in rawM) {
+        if (e is Map<String, dynamic>) {
+          members.add(SettlementShareMember.fromJson(e));
+        }
+      }
+    }
+    if (rawI is List) {
+      for (final e in rawI) {
+        if (e is Map<String, dynamic>) {
+          items.add(BillSettlementShareItem.fromJson(e));
+        }
+      }
+    }
+    return BillSettlementRequestResult(
+      settlementId: (json['settlementId'] as num?)?.toInt() ?? 0,
+      totalAmount: (json['totalAmount'] as num?)?.toInt() ?? 0,
+      memberCount: (json['memberCount'] as num?)?.toInt() ?? 0,
+      amountPerMember: (json['amountPerMember'] as num?)?.toInt() ?? 0,
+      settledAt: json['settledAt']?.toString() ?? '',
+      members: members,
+      items: items,
+    );
+  }
+}
+
+bool _billSettlementIsConfirmedField(dynamic ic) {
+  if (ic is bool) return ic;
+  if (ic is num) return ic != 0;
+  if (ic is String) {
+    final u = ic.toUpperCase();
+    return u == 'TRUE' || u == '1' || u == 'YES';
+  }
+  return false;
+}
+
+/// GET `/api/bills/settlement/{settlementId}` 성공 시 `result` (공용 물품 정산 상세와 동일 필드)
+class BillSettlementDetailResult {
+  final int settlementId;
+  final int totalAmount;
+  final int amountPerMember;
+  final int memberCount;
+  final bool isConfirmed;
+  final String? confirmedAt;
+  final List<SettlementShareMember> members;
+  final List<BillSettlementShareItem> items;
+
+  const BillSettlementDetailResult({
+    required this.settlementId,
+    required this.totalAmount,
+    required this.amountPerMember,
+    required this.memberCount,
+    required this.isConfirmed,
+    this.confirmedAt,
+    required this.members,
+    required this.items,
+  });
+
+  factory BillSettlementDetailResult.fromJson(Map<String, dynamic> json) {
+    final rawM = json['members'];
+    final rawI = json['items'];
+    final members = <SettlementShareMember>[];
+    final items = <BillSettlementShareItem>[];
+    if (rawM is List) {
+      for (final e in rawM) {
+        if (e is Map<String, dynamic>) {
+          members.add(SettlementShareMember.fromJson(e));
+        }
+      }
+    }
+    if (rawI is List) {
+      for (final e in rawI) {
+        if (e is Map<String, dynamic>) {
+          items.add(BillSettlementShareItem.fromJson(e));
+        }
+      }
+    }
+    return BillSettlementDetailResult(
+      settlementId: (json['settlementId'] as num?)?.toInt() ?? 0,
+      totalAmount: (json['totalAmount'] as num?)?.toInt() ?? 0,
+      amountPerMember: (json['amountPerMember'] as num?)?.toInt() ?? 0,
+      memberCount: (json['memberCount'] as num?)?.toInt() ?? 0,
+      isConfirmed: _billSettlementIsConfirmedField(json['isConfirmed']),
+      confirmedAt: json['confirmedAt'] as String?,
+      members: members,
+      items: items,
+    );
+  }
+}
+
+/// PATCH `/api/bills/settlement/{id}/confirm` 성공 시 `result`
+class BillSettlementConfirmResult {
+  final int settlementId;
+  final int totalAmount;
+  final int memberCount;
+  final int amountPerMember;
+  final String confirmedAt;
+  final List<SettlementShareMember> members;
+  final List<BillSettlementShareItem> items;
+
+  const BillSettlementConfirmResult({
+    required this.settlementId,
+    required this.totalAmount,
+    required this.memberCount,
+    required this.amountPerMember,
+    required this.confirmedAt,
+    required this.members,
+    required this.items,
+  });
+
+  factory BillSettlementConfirmResult.fromJson(Map<String, dynamic> json) {
+    final rawM = json['members'];
+    final rawI = json['items'];
+    final members = <SettlementShareMember>[];
+    final items = <BillSettlementShareItem>[];
+    if (rawM is List) {
+      for (final e in rawM) {
+        if (e is Map<String, dynamic>) {
+          members.add(SettlementShareMember.fromJson(e));
+        }
+      }
+    }
+    if (rawI is List) {
+      for (final e in rawI) {
+        if (e is Map<String, dynamic>) {
+          items.add(BillSettlementShareItem.fromJson(e));
+        }
+      }
+    }
+    return BillSettlementConfirmResult(
+      settlementId: (json['settlementId'] as num?)?.toInt() ?? 0,
+      totalAmount: (json['totalAmount'] as num?)?.toInt() ?? 0,
+      memberCount: (json['memberCount'] as num?)?.toInt() ?? 0,
+      amountPerMember: (json['amountPerMember'] as num?)?.toInt() ?? 0,
+      confirmedAt: json['confirmedAt']?.toString() ?? '',
+      members: members,
+      items: items,
     );
   }
 }

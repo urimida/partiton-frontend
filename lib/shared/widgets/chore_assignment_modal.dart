@@ -107,7 +107,7 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
         if (response.isSuccess && response.result != null) {
           // CHORE 카테고리 아이템만 필터링
           final existingChores = response.result!
-              .where((item) => item.category.toUpperCase() == 'CHORE')
+              .where((item) => item.category.trim().toUpperCase() == 'CHORE')
               .toList();
           
           // 선택된 집안일과 중복 확인

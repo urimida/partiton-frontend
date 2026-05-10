@@ -78,13 +78,23 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     return _cachedDailyEvents?[dateKey];
   }
 
+  /// 일간 API `category` 비교용 (공백·대소문자 차이 흡수)
+  String _normalizeDailyCategory(String? raw) =>
+      (raw ?? '').trim().toUpperCase();
+
+  bool _assigneeNameMatchesMe(String? assignee, String meName) {
+    if (assignee == null || assignee.trim().isEmpty) return false;
+    return assignee.trim().toLowerCase() == meName.trim().toLowerCase();
+  }
+
   /// DailyCalendarItem을 _CalendarEvent로 변환
   List<_CalendarEvent> _convertDailyItemsToEvents(List<DailyCalendarItem> items) {
     return items.map((item) {
       CalendarEventType eventType;
       String description;
-      
-      if (item.category.toUpperCase() == 'CHORE') {
+      final cat = _normalizeDailyCategory(item.category);
+
+      if (cat == 'CHORE') {
         eventType = CalendarEventType.chore;
         // 작성자 이름을 앞에 표시
         if (item.assigneeName != null && item.assigneeName!.isNotEmpty) {
@@ -92,7 +102,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
         } else {
           description = item.title;
         }
-      } else if (item.category.toUpperCase() == 'SCHEDULE') {
+      } else if (cat == 'SCHEDULE') {
         eventType = CalendarEventType.memo;
         // 작성자 이름을 앞에 표시
         if (item.assigneeName != null && item.assigneeName!.isNotEmpty) {
@@ -115,11 +125,12 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       }
 
       bool? isOwnerForEvent = item.isOwner;
-      if (item.category.toUpperCase() == 'CHORE' &&
+      if (cat == 'CHORE' &&
           isOwnerForEvent == null &&
           item.assigneeName != null &&
-          item.assigneeName!.isNotEmpty) {
-        isOwnerForEvent = item.assigneeName == _meNameForChores;
+          item.assigneeName!.trim().isNotEmpty) {
+        isOwnerForEvent =
+            _assigneeNameMatchesMe(item.assigneeName, _meNameForChores);
       }
 
       return _CalendarEvent(
@@ -837,12 +848,12 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
       children: events.map(
         (event) {
           // SCHEDULE 카테고리이고 isOwner가 true인 경우에만 수정/삭제 가능
-          final isSchedule = event.category?.toUpperCase() == 'SCHEDULE';
+          final cat = _normalizeDailyCategory(event.category);
+          final isSchedule = cat == 'SCHEDULE';
           final canEdit = isSchedule && (event.isOwner == true);
-          final isChoreItem = event.type == CalendarEventType.chore &&
-              event.category?.toUpperCase() == 'CHORE' &&
-              event.id != null &&
-              (event.isOwner == true);
+          // 집안일: 서버 PK가 있으면 완료 토글 UI 제공 (권한은 API가 검증)
+          final isChoreItem =
+              event.type == CalendarEventType.chore && cat == 'CHORE' && event.id != null;
           
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
