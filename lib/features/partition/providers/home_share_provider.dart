@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:partition_app/core/storage/storage_service.dart';
+import 'package:partition_app/features/partition/services/geocoding_service.dart';
 import 'package:partition_app/features/partition/services/home_share_service.dart';
 
 /// 귀가 공유 상태 및 위치 감시 로직을 관리합니다.
@@ -21,6 +22,7 @@ class HomeShareProvider extends ChangeNotifier {
   bool _isLoading = false;
 
   ({double lat, double lng, double radius})? _homeLocation;
+  String? _homeAddress;
   DateTime? _lastNotifiedAt;
   StreamSubscription<Position>? _positionSub;
 
@@ -30,12 +32,24 @@ class HomeShareProvider extends ChangeNotifier {
   bool get isNearHome => _isNearHome;
   bool get isLoading => _isLoading;
   ({double lat, double lng, double radius})? get homeLocation => _homeLocation;
+  String? get homeAddress => _homeAddress;
 
   /// 저장된 상태를 로드하고 필요 시 위치 감시를 재개합니다.
   Future<void> initialize() async {
     _isEnabled = StorageService.getSharingEnabled();
     _homeLocation = StorageService.getHomeLocation();
+    _homeAddress = StorageService.getHomeAddress();
     _lastNotifiedAt = StorageService.getLastNearHomeNotification();
+
+    // 주소가 없지만 좌표가 있으면 역지오코딩으로 주소 복원
+    if (_homeAddress == null && _homeLocation != null) {
+      final loc = _homeLocation!;
+      final address = await GeocodingService.reverseGeocode(loc.lat, loc.lng);
+      if (address != null) {
+        _homeAddress = address;
+        await StorageService.setHomeAddress(address);
+      }
+    }
 
     if (_isEnabled && _homeLocation != null) {
       await _startLocationWatch();
@@ -109,6 +123,13 @@ class HomeShareProvider extends ChangeNotifier {
         _defaultRadius,
       );
 
+      // 역지오코딩으로 주소 저장 (실패 시 좌표 문자열로 대체)
+      final address =
+          await GeocodingService.reverseGeocode(pos.latitude, pos.longitude);
+      _homeAddress = address ??
+          '${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
+      await StorageService.setHomeAddress(_homeAddress!);
+
       // 서버에도 저장 (실패해도 로컬 기능은 동작)
       _service
           .saveHomeLocation(lat: pos.latitude, lng: pos.longitude)
@@ -127,9 +148,45 @@ class HomeShareProvider extends ChangeNotifier {
     }
   }
 
+  /// 좌표와 주소를 지정해 집 위치를 설정합니다 (주소 검색 결과 선택 시 사용).
+  Future<bool> setHomeFromCoordinates(
+      double lat, double lng, String address) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      _homeLocation = (lat: lat, lng: lng, radius: _defaultRadius);
+      _homeAddress = address;
+      await StorageService.setHomeLocation(lat, lng, _defaultRadius);
+      await StorageService.setHomeAddress(address);
+
+      _service
+          .saveHomeLocation(lat: lat, lng: lng)
+          .catchError((Object e) {
+        debugPrint('[HomeShare] 집 위치 서버 저장 실패: $e');
+      });
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      debugPrint('[HomeShare] setHomeFromCoordinates 실패: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// 주소 문자열만 업데이트합니다 (좌표는 유지).
+  Future<void> updateHomeAddress(String address) async {
+    _homeAddress = address;
+    await StorageService.setHomeAddress(address);
+    notifyListeners();
+  }
+
   /// 집 위치를 초기화합니다.
   Future<void> clearHomeLocation() async {
     _homeLocation = null;
+    _homeAddress = null;
     await StorageService.clearHomeLocation();
     notifyListeners();
   }

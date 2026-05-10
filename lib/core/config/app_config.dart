@@ -2,12 +2,11 @@ class AppConfig {
   static const String appName = 'Partition App';
   static const String appVersion = '1.0.0';
   
-  // 백엔드 API 설정 (배포)
-  static const String baseUrl =
-      'http://ec2-52-78-152-123.ap-northeast-2.compute.amazonaws.com/api';
+  // 백엔드 API (Spring)
+  static const String baseUrl = 'https://api.partition.site/api';
   /// Swagger UI (API 문서)
   static const String swaggerUiUrl =
-      'http://ec2-52-78-152-123.ap-northeast-2.compute.amazonaws.com/swagger-ui/index.html';
+      'https://api.partition.site/swagger-ui/index.html';
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
   
@@ -79,8 +78,8 @@ class AppConfig {
   static const String reservationsEndpoint = '/reservations';
 
   /// PARTITION_AI (FastAPI). Spring에서 받은 액세스 토큰을 그대로 Bearer로 전달합니다.
-  /// Swagger: http://52.79.93.254:8000/docs#/insights/household_insights_query_api_insights_query_post
-  static const String insightsAiBaseUrl = 'http://52.79.93.254:8000';
+  /// Swagger: https://ai.partition.site/docs
+  static const String insightsAiBaseUrl = 'https://ai.partition.site';
 
   /// `POST /api/insights/query` — 절대 URL (Dio가 [baseUrl]과 합치지 않음)
   static String get insightsAiQueryUrl =>
@@ -106,6 +105,11 @@ class AppConfig {
   static const String reservationsItemsEndpoint = '/reservations/items';
   /// PATCH — `{ name }` 로 단일 예약 대상 수정
   static String reservationsItemPath(int itemId) => '/reservations/items/$itemId';
+
+  // ── 카카오 지도 REST API ──────────────────────────────────────────────────
+  /// 카카오 Local API REST 키 (주소 검색·역지오코딩 HTTP 호출용)
+  /// https://developers.kakao.com → 내 애플리케이션 → 앱 설정 → 앱 키 → REST API 키
+  static const String kakaoRestApiKey = '6b6d3822b9ffb4d757eef35051d729d3';
 
   // ── 귀가 공유 (위치 기반 알림) ────────────────────────────────────────────
   /// 위치 공유 동의 저장/조회 (POST `{ agreed: bool }` · GET)

@@ -28,16 +28,6 @@ Map<String, dynamic> _$DailyCalendarResponseModelToJson(
       'error': instance.error,
     };
 
-DailyCalendarItem _$DailyCalendarItemFromJson(Map<String, dynamic> json) =>
-    DailyCalendarItem(
-      category: dailyCalendarApiString(json['category']),
-      id: (json['id'] as num).toInt(),
-      title: dailyCalendarApiString(json['title']),
-      assigneeName: json['assigneeName'] as String?,
-      isCompleted: dailyCalendarApiBool(json['isCompleted']),
-      isOwner: json['isOwner'] as bool?,
-    );
-
 Map<String, dynamic> _$DailyCalendarItemToJson(DailyCalendarItem instance) =>
     <String, dynamic>{
       'category': instance.category,

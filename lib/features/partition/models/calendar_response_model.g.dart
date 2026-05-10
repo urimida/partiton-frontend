@@ -10,7 +10,7 @@ CalendarResponseModel _$CalendarResponseModelFromJson(
         Map<String, dynamic> json) =>
     CalendarResponseModel(
       isSuccess: json['isSuccess'] as bool,
-      code: json['code'] as String,
+      code: calendarResponseApiString(json['code']),
       message: json['message'] as String,
       result: (json['result'] as List<dynamic>?)
           ?.map((e) => CalendarDayItem.fromJson(e as Map<String, dynamic>))
@@ -27,14 +27,6 @@ Map<String, dynamic> _$CalendarResponseModelToJson(
       'result': instance.result,
       'error': instance.error,
     };
-
-CalendarDayItem _$CalendarDayItemFromJson(Map<String, dynamic> json) =>
-    CalendarDayItem(
-      date: json['date'] as String,
-      choreCount: (json['choreCount'] as num).toInt(),
-      scheduleCount: (json['scheduleCount'] as num).toInt(),
-      utilityBillsCount: (json['utilityBillsCount'] as num).toInt(),
-    );
 
 Map<String, dynamic> _$CalendarDayItemToJson(CalendarDayItem instance) =>
     <String, dynamic>{

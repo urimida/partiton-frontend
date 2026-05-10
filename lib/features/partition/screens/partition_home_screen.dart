@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:partition_app/features/partition/providers/home_share_provider.dart';
+import 'package:partition_app/features/partition/services/geocoding_service.dart';
 import 'package:partition_app/shared/widgets/home_calendar_widget.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
 import 'package:partition_app/shared/widgets/chore_assignment_modal.dart';
@@ -50,6 +52,16 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
       builder: (context) => ChoreAssignmentModal(
         onSuccess: _refreshCalendar,
       ),
+    );
+  }
+
+  // ── 집 위치 변경 ──────────────────────────────────────────────────────────
+
+  Future<void> _onEditHomeLocation(BuildContext context) async {
+    await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.6),
+      builder: (ctx) => const _HomeLocationChangeDialog(),
     );
   }
 
@@ -179,7 +191,10 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
               onPressed: () => _showChoreAssignmentModal(context),
             ),
             const SizedBox(height: 12),
-            _HomeShareCard(onToggle: () => _onToggleSharing(context)),
+            _HomeShareCard(
+              onToggle: () => _onToggleSharing(context),
+              onEditLocation: () => _onEditHomeLocation(context),
+            ),
             const SizedBox(height: 20),
           ],
         ),
@@ -193,9 +208,13 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _HomeShareCard extends StatelessWidget {
-  const _HomeShareCard({required this.onToggle});
+  const _HomeShareCard({
+    required this.onToggle,
+    required this.onEditLocation,
+  });
 
   final VoidCallback onToggle;
+  final VoidCallback onEditLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -274,6 +293,27 @@ class _HomeShareCard extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  // 집 위치 변경 버튼
+                  GestureDetector(
+                    onTap: onEditLocation,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.18),
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.edit_location_alt_rounded,
+                        size: 16,
+                        color: Colors.white.withOpacity(0.55),
+                      ),
                     ),
                   ),
                   // 토글 또는 로딩
@@ -603,6 +643,540 @@ class _HomeLocationSetupDialogState extends State<_HomeLocationSetupDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 집 위치 변경 다이얼로그
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _HomeLocationChangeDialog extends StatefulWidget {
+  const _HomeLocationChangeDialog();
+
+  @override
+  State<_HomeLocationChangeDialog> createState() =>
+      _HomeLocationChangeDialogState();
+}
+
+class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
+  final TextEditingController _searchController = TextEditingController();
+
+  bool _locationLoading = false;
+  bool _searchLoading = false;
+  bool _addressLoading = false;
+  bool _addressLoadFailed = false;
+  List<PlaceSuggestion> _suggestions = [];
+  String? _error;
+  Timer? _debounce;
+  bool _apiKeyMissing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_onSearchChanged);
+    _checkApiKey();
+    _ensureAddressLoaded();
+  }
+
+  void _checkApiKey() {
+    _apiKeyMissing = !GeocodingService.hasApiKey;
+  }
+
+  Future<void> _ensureAddressLoaded() async {
+    final provider = context.read<HomeShareProvider>();
+    if (provider.homeAddress == null && provider.homeLocation != null) {
+      setState(() {
+        _addressLoading = true;
+        _addressLoadFailed = false;
+      });
+      final loc = provider.homeLocation!;
+      final address = await GeocodingService.reverseGeocode(loc.lat, loc.lng);
+      if (!mounted) return;
+      if (address != null) {
+        await provider.updateHomeAddress(address);
+        setState(() => _addressLoading = false);
+      } else {
+        // 역지오코딩 실패 시 좌표 문자열로 표시
+        final fallback =
+            '${loc.lat.toStringAsFixed(5)}, ${loc.lng.toStringAsFixed(5)}';
+        await provider.updateHomeAddress(fallback);
+        setState(() {
+          _addressLoading = false;
+          _addressLoadFailed = true;
+        });
+      }
+    }
+  }
+
+  void _onSearchChanged() {
+    _debounce?.cancel();
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    _debounce =
+        Timer(const Duration(milliseconds: 400), () => _search(query));
+  }
+
+  Future<void> _search(String query) async {
+    setState(() {
+      _searchLoading = true;
+      _error = null;
+    });
+    final results = await GeocodingService.searchPlaces(query);
+    if (!mounted) return;
+    setState(() {
+      _suggestions = results;
+      _searchLoading = false;
+    });
+  }
+
+  Future<void> _onUseCurrentLocation() async {
+    setState(() {
+      _locationLoading = true;
+      _error = null;
+    });
+    final provider = context.read<HomeShareProvider>();
+    final success = await provider.setHomeFromCurrentLocation();
+    if (!mounted) return;
+    setState(() => _locationLoading = false);
+    if (success) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() => _error = '현재 위치를 가져오지 못했습니다.\n위치 권한을 확인해주세요.');
+    }
+  }
+
+  Future<void> _onSelectPlace(PlaceSuggestion place) async {
+    // 카카오 검색 결과에는 좌표가 이미 포함되어 있으므로 별도 상세 조회 불필요
+    setState(() {
+      _suggestions = [];
+      _error = null;
+    });
+    final provider = context.read<HomeShareProvider>();
+    await provider.setHomeFromCoordinates(
+        place.lat, place.lng, place.formattedAddress);
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<HomeShareProvider>();
+    final homeAddress = provider.homeAddress;
+    final hasHome = provider.homeLocation != null;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A2F42).withOpacity(0.92),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withOpacity(0.18)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 헤더
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6BA3FF).withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.home_rounded,
+                        color: Color(0xFF6BA3FF),
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        '집 위치 변경',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(false),
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: Colors.white.withOpacity(0.45),
+                        size: 22,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // 현재 설정 주소
+                if (hasHome) ...[
+                  Text(
+                    '현재 설정된 집 주소',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.5),
+                      fontSize: 12,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: _addressLoadFailed
+                          ? Colors.white.withOpacity(0.06)
+                          : const Color(0xFF6BA3FF).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _addressLoadFailed
+                            ? Colors.white.withOpacity(0.12)
+                            : const Color(0xFF6BA3FF).withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        if (_addressLoading)
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white.withOpacity(0.5),
+                            ),
+                          )
+                        else
+                          Icon(
+                            _addressLoadFailed
+                                ? Icons.location_searching_rounded
+                                : Icons.location_on_rounded,
+                            color: _addressLoadFailed
+                                ? Colors.white.withOpacity(0.35)
+                                : const Color(0xFF6BA3FF),
+                            size: 18,
+                          ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _addressLoading
+                              ? Text(
+                                  '주소 불러오는 중...',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.45),
+                                    fontSize: 13,
+                                    fontStyle: FontStyle.italic,
+                                    decoration: TextDecoration.none,
+                                  ),
+                                )
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      homeAddress ?? '-',
+                                      style: TextStyle(
+                                        color: _addressLoadFailed
+                                            ? Colors.white.withOpacity(0.55)
+                                            : Colors.white.withOpacity(0.88),
+                                        fontSize: 13,
+                                        decoration: TextDecoration.none,
+                                      ),
+                                    ),
+                                    if (_addressLoadFailed) ...[
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        '주소 변환 실패 — 검색으로 직접 입력해주세요',
+                                        style: TextStyle(
+                                          color:
+                                              Colors.orange.withOpacity(0.75),
+                                          fontSize: 11,
+                                          decoration: TextDecoration.none,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+
+                // 현재 위치로 설정 버튼
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _locationLoading ? null : _onUseCurrentLocation,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6BA3FF),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
+                    ),
+                    icon: _locationLoading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.my_location_rounded, size: 16),
+                    label: Text(
+                      _locationLoading ? '위치 가져오는 중...' : '현재 위치로 설정',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // 구분선
+                Row(
+                  children: [
+                    Expanded(
+                        child: Divider(color: Colors.white.withOpacity(0.15))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        '또는 주소 검색',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.4),
+                          fontSize: 12,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                        child: Divider(color: Colors.white.withOpacity(0.15))),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // 검색 입력창
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.07),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withOpacity(0.15)),
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    style: TextStyle(
+                        color: Colors.white.withOpacity(0.9), fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: _apiKeyMissing
+                          ? '카카오 REST API 키 설정 후 사용 가능'
+                          : '장소 또는 주소를 검색하세요',
+                      hintStyle: TextStyle(
+                        color: Colors.white.withOpacity(0.3),
+                        fontSize: 14,
+                        decoration: TextDecoration.none,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        color: Colors.white.withOpacity(0.38),
+                        size: 20,
+                      ),
+                      suffixIcon: _searchLoading
+                          ? Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white.withOpacity(0.4),
+                                ),
+                              ),
+                            )
+                          : _searchController.text.isNotEmpty
+                              ? GestureDetector(
+                                  onTap: () {
+                                    _searchController.clear();
+                                    setState(() => _suggestions = []);
+                                  },
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                    color: Colors.white.withOpacity(0.35),
+                                  ),
+                                )
+                              : null,
+                      border: InputBorder.none,
+                      contentPadding:
+                          const EdgeInsets.symmetric(vertical: 13),
+                      enabled: !_apiKeyMissing,
+                    ),
+                  ),
+                ),
+
+                // API 키 안내
+                if (_apiKeyMissing) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.orange.withOpacity(0.25)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.info_outline_rounded,
+                            size: 14,
+                            color: Colors.orange.withOpacity(0.8)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'app_config.dart의 kakaoRestApiKey에\n카카오 REST API 키를 입력하면 주소 검색을 사용할 수 있어요.',
+                            style: TextStyle(
+                              color: Colors.orange.withOpacity(0.8),
+                              fontSize: 11,
+                              height: 1.5,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // 에러 메시지
+                if (_error != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8B2942).withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        color: Colors.red.shade300,
+                        fontSize: 12,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ],
+
+                // 검색 결과
+                if (_suggestions.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 200),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border:
+                          Border.all(color: Colors.white.withOpacity(0.12)),
+                    ),
+                    child: ListView.separated(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: _suggestions.length,
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        color: Colors.white.withOpacity(0.08),
+                      ),
+                      itemBuilder: (context, index) {
+                        final place = _suggestions[index];
+                        return InkWell(
+                          onTap: () => _onSelectPlace(place),
+                          borderRadius: index == 0
+                              ? const BorderRadius.vertical(
+                                  top: Radius.circular(12))
+                              : index == _suggestions.length - 1
+                                  ? const BorderRadius.vertical(
+                                      bottom: Radius.circular(12))
+                                  : BorderRadius.zero,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 11),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on_outlined,
+                                  size: 16,
+                                  color: Colors.white.withOpacity(0.4),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        place.mainText,
+                                        style: TextStyle(
+                                          color:
+                                              Colors.white.withOpacity(0.9),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                          decoration: TextDecoration.none,
+                                        ),
+                                      ),
+                                      if (place.secondaryText.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          place.secondaryText,
+                                          style: TextStyle(
+                                            color:
+                                                Colors.white.withOpacity(0.45),
+                                            fontSize: 11,
+                                            decoration: TextDecoration.none,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

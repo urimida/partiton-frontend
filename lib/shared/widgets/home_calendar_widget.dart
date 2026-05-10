@@ -87,12 +87,25 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     return assignee.trim().toLowerCase() == meName.trim().toLowerCase();
   }
 
+  /// 서버 자동 일정·공과금·월세 등이 `SCHEDULE` + 특정 담당자명으로 오는 경우
+  bool _isSystemGeneratedAssignee(String? assignee) {
+    final a = assignee?.trim().toLowerCase();
+    if (a == null || a.isEmpty) return false;
+    return a == '시스템' ||
+        a == 'system' ||
+        a == 'system_generated' ||
+        a == 'auto' ||
+        a == '서버';
+  }
+
   /// DailyCalendarItem을 _CalendarEvent로 변환
   List<_CalendarEvent> _convertDailyItemsToEvents(List<DailyCalendarItem> items) {
     return items.map((item) {
       CalendarEventType eventType;
       String description;
       final cat = _normalizeDailyCategory(item.category);
+      final systemSchedule =
+          cat == 'SCHEDULE' && _isSystemGeneratedAssignee(item.assigneeName);
 
       if (cat == 'CHORE') {
         eventType = CalendarEventType.chore;
@@ -102,7 +115,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
         } else {
           description = item.title;
         }
-      } else if (cat == 'SCHEDULE') {
+      } else if (cat == 'SCHEDULE' && !systemSchedule) {
         eventType = CalendarEventType.memo;
         // 작성자 이름을 앞에 표시
         if (item.assigneeName != null && item.assigneeName!.isNotEmpty) {
@@ -114,7 +127,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
           description += ' ✓';
         }
       } else {
-        // 기본값 (공과금 등)
+        // UTILITY/BILL 카테고리 또는 서버 자동 일정(시스템 담당) → 공과금 UI
         eventType = CalendarEventType.bill;
         // 작성자 이름을 앞에 표시
         if (item.assigneeName != null && item.assigneeName!.isNotEmpty) {

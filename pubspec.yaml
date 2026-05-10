@@ -44,6 +44,7 @@ dependencies:
 
   # 위치 서비스 (귀가 공유)
   geolocator: ^14.0.2
+  geocoding: ^3.0.0
   path_provider: ^2.1.5
   permission_handler: ^12.0.1
   web: ^1.1.0

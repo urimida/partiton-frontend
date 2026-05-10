@@ -137,6 +137,15 @@ class StorageService {
     await _prefs?.remove('home_lat');
     await _prefs?.remove('home_lng');
     await _prefs?.remove('home_radius');
+    await _prefs?.remove('home_address');
+  }
+
+  static Future<bool> setHomeAddress(String address) async {
+    return await _prefs?.setString('home_address', address) ?? false;
+  }
+
+  static String? getHomeAddress() {
+    return _prefs?.getString('home_address');
   }
 
   static Future<bool> setLastNearHomeNotification(DateTime time) async {

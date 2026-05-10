@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:partition_app/core/config/app_config.dart';
 import 'package:partition_app/core/network/api_client.dart';
 import 'package:partition_app/core/network/api_exception.dart';
@@ -22,6 +23,7 @@ class HomeShareService {
         );
       }
     } on DioException catch (e) {
+      if (_is404(e)) return; // 서버 미구현 — 로컬 기능은 정상 동작
       throw ApiException.fromDioError(e);
     }
   }
@@ -34,6 +36,7 @@ class HomeShareService {
         data: {'agreed': agreed},
       );
     } on DioException catch (e) {
+      if (_is404(e)) return;
       throw ApiException.fromDioError(e);
     }
   }
@@ -50,7 +53,17 @@ class HomeShareService {
         data: {'lat': lat, 'lng': lng, 'radius': radius},
       );
     } on DioException catch (e) {
+      if (_is404(e)) return;
       throw ApiException.fromDioError(e);
     }
+  }
+
+  /// 404 응답 여부 확인 (백엔드 미구현 엔드포인트 무시용)
+  bool _is404(DioException e) {
+    final is404 = e.response?.statusCode == 404;
+    if (is404) {
+      debugPrint('[HomeShareService] 서버 미구현 엔드포인트 — 로컬 저장으로 대체됩니다.');
+    }
+    return is404;
   }
 }
