@@ -24,8 +24,8 @@ class _ChoreReportItem {
   final String lowPerson;
   final int lowCount;
   final int daysSinceLast;
-  /// null이면 스마일 아이콘으로 대체
-  final IconData? icon;
+  /// null이면 기본 스마일 이모지로 대체
+  final String? emoji;
   /// API: 조회 기간 전체 완료 횟수. null이면 카드에 표시 안 함
   final int? totalCompleted;
 
@@ -37,7 +37,7 @@ class _ChoreReportItem {
     required this.lowPerson,
     required this.lowCount,
     required this.daysSinceLast,
-    this.icon,
+    this.emoji,
     this.totalCompleted,
   });
 }
@@ -88,7 +88,7 @@ const List<_ChoreReportItem> _kReportDummyChoreItems = [
     lowPerson: '우진',
     lowCount: 3,
     daysSinceLast: 1,
-    icon: Icons.local_dining_rounded,
+    emoji: '🧤',
   ),
   _ChoreReportItem(
     name: '청소기 돌리기',
@@ -98,7 +98,7 @@ const List<_ChoreReportItem> _kReportDummyChoreItems = [
     lowPerson: '민지',
     lowCount: 2,
     daysSinceLast: 4,
-    icon: null,
+    emoji: '🧹',
   ),
   _ChoreReportItem(
     name: '분리수거',
@@ -108,7 +108,7 @@ const List<_ChoreReportItem> _kReportDummyChoreItems = [
     lowPerson: '지원',
     lowCount: 1,
     daysSinceLast: 2,
-    icon: Icons.recycling_rounded,
+    emoji: '♻️',
   ),
 ];
 
@@ -118,14 +118,14 @@ const List<_UtilityDeltaRow> _kReportDummyUtilityDeltas = [
 ];
 
 const List<List<String>> _kReportDummyConsumptionTopRows = [
-  ['최고 지출 항목', '라면 5입 묶음 (45,000원)'],
-  ['최다 결제 항목', '생수 2L (결제 8회)'],
+  ['최고지출', '라면 5입 묶음 (45,000원)'],
+  ['최다구매', '생수 2L (구매 8건)'],
 ];
 
 const List<_ReservationReportRow> _kReportDummyReservationRows = [
-  _ReservationReportRow('욕실', '우진 (12회)', '지원 (2회)', '평균 45분'),
-  _ReservationReportRow('세탁기', '민지 (9회)', '우진 (1회)', '평균 60분'),
-  _ReservationReportRow('공용 거실 TV', '지원 (6회)', '민지 (0회)', '평균 90분'),
+  _ReservationReportRow('욕실', '우진 (12회)', '지원 (2회)', '45분'),
+  _ReservationReportRow('세탁기', '민지 (9회)', '우진 (1회)', '60분'),
+  _ReservationReportRow('공용 거실 TV', '지원 (6회)', '민지 (0회)', '90분'),
 ];
 
 const List<_SettlementReportRow> _kReportDummySettlementGoodsRows = [
@@ -164,6 +164,13 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   static const double _minSymmetricPadBandHalf = 14.0;
   static const double _borderRadiusLarge = 32.0;
   static const double _borderRadiusSmall = 24.0;
+  static const int _settlementItemsPerPage = 5;
+  static const double _settlementTablePageViewHeight = 132.0;
+  static const List<String> _reservationMetricLabels = [
+    '가장 많이 사용',
+    '가장 적게 사용',
+    '사용 시간',
+  ];
   /// 리포트 전체 기간 (집안일·소비·예약)
   late DateTime _rangeStart;
   late DateTime _rangeEnd;
@@ -175,6 +182,9 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
 
   final PageController _chorePageController = PageController();
   int _chorePageIndex = 0;
+  final PageController _settlementPageController = PageController();
+  int _settlementPageIndex = 0;
+  int _reservationMetricIndex = 0;
 
   final ReportService _reportService = ReportService();
 
@@ -219,6 +229,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
           ? List<_ChoreReportItem>.from(_kReportDummyChoreItems)
           : <_ChoreReportItem>[];
       _chorePageIndex = 0;
+      _settlementPageIndex = 0;
       if (useDummy) {
         _apiConsumptionTopRows = [];
         _apiUtilityDeltas = [];
@@ -240,6 +251,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
       if (_chorePageController.hasClients) {
         _chorePageController.jumpToPage(0);
       }
+      _syncSettlementPageToCurrentRows();
       if (!useDummy) {
         _scheduleReportLoad();
         _scheduleSettlementLoad();
@@ -275,22 +287,56 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
     return ym;
   }
 
-  IconData? _iconForChoreType(String choreType) {
+  String? _emojiForChore({
+    required String choreType,
+    required String choreName,
+  }) {
     switch (choreType.toUpperCase()) {
       case 'DISH_WASHING':
       case 'DISHWASHING':
-        return Icons.local_dining_rounded;
+        return '🧤';
+      case 'COOKING':
+        return '🧑‍🍳';
+      case 'TRASH':
+      case 'FOODTRASH':
+        return '🗑️';
       case 'TRASH_RECYCLING':
       case 'RECYCLING':
-        return Icons.recycling_rounded;
+        return '♻️';
       case 'VACUUM_CLEANING':
+      case 'VACUUM':
       case 'CLEANING':
-        return Icons.cleaning_services_rounded;
+        return '🧹';
+      case 'MOPPING':
+        return '🧽';
+      case 'WINDOW':
+        return '🪟';
+      case 'BATHROOM':
+        return '🚽';
+      case 'FRIDGE':
+        return '🧊';
       case 'LAUNDRY':
-        return Icons.local_laundry_service_rounded;
+        return '🧺';
       case 'PET_CARE':
-        return Icons.pets_rounded;
+        return '🐾';
       default:
+        final normalizedName = choreName.trim();
+        if (normalizedName.contains('일반쓰레기') ||
+            normalizedName.contains('음식물')) {
+          return '🗑️';
+        }
+        if (normalizedName.contains('설거지')) return '🧤';
+        if (normalizedName.contains('요리')) return '🧑‍🍳';
+        if (normalizedName.contains('청소기')) return '🧹';
+        if (normalizedName.contains('창문') ||
+            normalizedName.contains('창틀')) {
+          return '🪟';
+        }
+        if (normalizedName.contains('화장실')) return '🚽';
+        if (normalizedName.contains('바닥')) return '🧽';
+        if (normalizedName.contains('냉장고')) return '🧊';
+        if (normalizedName.contains('빨래')) return '🧺';
+        if (normalizedName.contains('분리수거')) return '♻️';
         return null;
     }
   }
@@ -319,7 +365,10 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                       : '-',
               lowCount: e.bottomPerformer?.count ?? 0,
               daysSinceLast: e.lastPerformedDaysAgo ?? -1,
-              icon: _iconForChoreType(e.choreType),
+              emoji: _emojiForChore(
+                choreType: e.choreType,
+                choreName: e.choreName,
+              ),
               totalCompleted: e.totalCount,
             ),
           )
@@ -330,14 +379,14 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
     final hi = s.highestAmountItem;
     if (hi != null && hi.itemName.isNotEmpty) {
       rows.add([
-        '최고 지출 항목',
+        '최고지출',
         '${hi.itemName} (${_commaWon(hi.amount)})',
       ]);
     }
     final mp = s.mostPurchasedItem;
     if (mp != null && mp.itemName.isNotEmpty) {
       rows.add([
-        '최다 구매 항목',
+        '최다구매',
         '${mp.itemName} (구매 ${mp.purchaseCount}건)',
       ]);
     }
@@ -368,11 +417,59 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
               _reservationPerfLabel(e.topPerformer),
               _reservationPerfLabel(e.bottomPerformer),
               e.avgDurationMinutes != null
-                  ? '평균 ${e.avgDurationMinutes}분'
+                  ? '${e.avgDurationMinutes}분'
                   : '-',
             ),
           )
           .toList();
+
+  List<_SettlementReportRow> _settlementRowsForCurrentFilter() {
+    final goodsRows = _reportUseDummy
+        ? _kReportDummySettlementGoodsRows
+        : _apiSettlementGoodsRows;
+    final utilRows = _reportUseDummy
+        ? _kReportDummySettlementUtilRows
+        : _apiSettlementBillRows;
+    return _settlementFilter == 0 ? goodsRows : utilRows;
+  }
+
+  void _syncSettlementPageToCurrentRows() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_settlementPageController.hasClients) return;
+      final pages = _paginateSettlementRows(
+        _settlementRowsForCurrentFilter(),
+        _settlementItemsPerPage,
+      );
+      final maxPage = pages.isEmpty ? 0 : pages.length - 1;
+      final target = _settlementPageIndex.clamp(0, maxPage).toInt();
+      if (_settlementPageIndex != target) {
+        setState(() => _settlementPageIndex = target);
+      }
+      _settlementPageController.jumpToPage(target);
+    });
+  }
+
+  void _selectSettlementFilter(int index) {
+    if (_settlementFilter == index) return;
+    setState(() {
+      _settlementFilter = index;
+      _settlementPageIndex = 0;
+    });
+    _syncSettlementPageToCurrentRows();
+  }
+
+  String _reservationMetricValue(_ReservationReportRow row) {
+    switch (_reservationMetricIndex) {
+      case 0:
+        return row.mostUser;
+      case 1:
+        return row.leastUser;
+      case 2:
+        return row.usageTime;
+      default:
+        return row.mostUser;
+    }
+  }
 
   void _scheduleReportLoad() {
     if (!mounted || !_shouldUseLiveReportApi(context)) return;
@@ -402,6 +499,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
       if (!mounted) return;
       setState(() {
         _settlementLoading = false;
+        _settlementPageIndex = 0;
         _apiSettlementGoodsRows = result.supplies
             .map(
               (s) => _SettlementReportRow(
@@ -425,22 +523,27 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
             )
             .toList();
       });
+      _syncSettlementPageToCurrentRows();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _settlementLoading = false;
+        _settlementPageIndex = 0;
         _settlementError = e.message;
         _apiSettlementGoodsRows = [];
         _apiSettlementBillRows = [];
       });
+      _syncSettlementPageToCurrentRows();
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _settlementLoading = false;
+        _settlementPageIndex = 0;
         _settlementError = '정산 리포트를 불러오지 못했습니다.';
         _apiSettlementGoodsRows = [];
         _apiSettlementBillRows = [];
       });
+      _syncSettlementPageToCurrentRows();
     }
   }
 
@@ -481,6 +584,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   @override
   void dispose() {
     _chorePageController.dispose();
+    _settlementPageController.dispose();
     super.dispose();
   }
 
@@ -565,10 +669,10 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
 
   /// 조회 기간 카드 아래(집안일·소비·예약·정산) 스크롤 블록 추정 높이 — 공용소비 `belowChips`와 동일 역할
   double _estimatedBelowDateCardContentHeight() {
-    const choreBlock = 346.0;
-    final consumptionBlock = _withinOneMonth ? 414.0 : 272.0;
-    const reservationBlock = 208.0;
-    const settlementBlock = 372.0;
+    const choreBlock = 366.0;
+    final consumptionBlock = _withinOneMonth ? 440.0 : 296.0;
+    const reservationBlock = 284.0;
+    const settlementBlock = 440.0;
     return choreBlock +
         _reportSectionGap +
         consumptionBlock +
@@ -668,8 +772,8 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
             decoration: const BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Colors.white,
-                  width: 0.5,
+                  color: Color.fromRGBO(214, 218, 226, 0.8),
+                  width: 0.65,
                 ),
               ),
             ),
@@ -693,7 +797,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                           style: const TextStyle(
                             color: Colors.white,
                             fontFamily: 'Pretendard Variable',
-                            fontSize: 20,
+                            fontSize: 22,
                             fontWeight: FontWeight.w900,
                             height: 1.1,
                             letterSpacing: -0.2,
@@ -734,13 +838,13 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   Widget _buildGlobalDateRow() {
     const labelStyle = TextStyle(
       color: Colors.white70,
-      fontSize: 12,
+      fontSize: 13,
       fontWeight: FontWeight.w400,
       fontFamily: 'Pretendard Variable',
     );
     const dateStyle = TextStyle(
       color: Colors.white,
-      fontSize: 14,
+      fontSize: 15,
       fontWeight: FontWeight.w600,
       fontFamily: 'Pretendard Variable',
     );
@@ -757,7 +861,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
               '조회 기간',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 17,
+                fontSize: 19,
                 fontWeight: FontWeight.w900,
                 fontFamily: 'Pretendard Variable',
                 height: 1.2,
@@ -777,7 +881,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withOpacity(0.78),
-              fontSize: 12,
+              fontSize: 13,
               fontFamily: 'Pretendard Variable',
               height: 1.35,
             ),
@@ -869,11 +973,11 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
           _sectionTitle('집안일'),
           const SizedBox(height: 6),
           Text(
-            '옆으로 넘겨 집안일별 요약을 확인해요.',
+            '집안일별 수행 내용을 확인해요.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withOpacity(0.72),
-              fontSize: 13,
+              fontSize: 14,
               fontFamily: 'Pretendard Variable',
             ),
           ),
@@ -887,7 +991,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.55),
-                        fontSize: 14,
+                        fontSize: 15,
                         fontFamily: 'Pretendard Variable',
                       ),
                     ),
@@ -904,24 +1008,10 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
           ),
           if (_choreItems.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                _choreItems.length,
-                (i) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: Container(
-                    width: i == _chorePageIndex ? 8 : 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(3),
-                      color: i == _chorePageIndex
-                          ? Colors.white.withOpacity(0.95)
-                          : Colors.white.withOpacity(0.35),
-                    ),
-                  ),
-                ),
-              ),
+            _buildPager(
+              controller: _chorePageController,
+              pageCount: _choreItems.length,
+              currentIndex: _chorePageIndex,
             ),
           ],
         ],
@@ -942,10 +1032,24 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 2),
             child: Icon(
               filled ? Icons.star_rounded : Icons.star_outline_rounded,
-              size: 22,
+              size: 26.4,
               color: filled
                   ? HomeShareStyle.point
                   : Colors.white.withOpacity(0.32),
+              shadows: filled
+                  ? [
+                      Shadow(
+                        color: HomeShareStyle.point.withOpacity(0.72),
+                        blurRadius: 10,
+                        offset: const Offset(0, 0),
+                      ),
+                      Shadow(
+                        color: Colors.white.withOpacity(0.32),
+                        blurRadius: 4,
+                        offset: const Offset(0, 0),
+                      ),
+                    ]
+                  : null,
             ),
           );
         }),
@@ -954,47 +1058,50 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   }
 
   Widget _choreCard(_ChoreReportItem c) {
-    final icon = c.icon ?? Icons.sentiment_satisfied_alt_rounded;
     return FrostedPanel(
       borderRadius: BorderRadius.circular(20),
       backgroundOpacity: 0.06,
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-      child: SingleChildScrollView(
-        physics: const ClampingScrollPhysics(),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(icon, size: 40, color: Colors.white.withOpacity(0.95)),
-            const SizedBox(height: 8),
-            Text(
-              c.name,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                fontFamily: 'Pretendard Variable',
-              ),
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  c.name,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: HomeShareStyle.point,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    fontFamily: 'Pretendard Variable',
+                  ),
+                ),
+                const SizedBox(height: 6),
+                _choreDifficultyStarsRow(c.difficultyStars),
+                const SizedBox(height: 10),
+                _choreLine(
+                  '가장 많이 한 멤버',
+                  c.topPerson == '-' ? '-' : '${c.topPerson} · ${c.topCount}회',
+                ),
+                _choreLine(
+                  '가장 적게 한 멤버',
+                  c.lowPerson == '-' ? '-' : '${c.lowPerson} · ${c.lowCount}회',
+                ),
+                _choreLine(
+                  '마지막 완료',
+                  c.daysSinceLast < 0 ? '데이터 없음' : '${c.daysSinceLast}일 전',
+                ),
+                if (c.totalCompleted != null)
+                  _choreLine('전체 완료 횟수', '${c.totalCompleted}회'),
+              ],
             ),
-            const SizedBox(height: 6),
-            _choreDifficultyStarsRow(c.difficultyStars),
-            const SizedBox(height: 10),
-            _choreLine(
-              '가장 많이 한 사람',
-              c.topPerson == '-' ? '-' : '${c.topPerson} · ${c.topCount}회',
-            ),
-            _choreLine(
-              '가장 적게 한 사람',
-              c.lowPerson == '-' ? '-' : '${c.lowPerson} · ${c.lowCount}회',
-            ),
-            _choreLine(
-              '최근 실시',
-              c.daysSinceLast < 0 ? '데이터 없음' : '${c.daysSinceLast}일 전',
-            ),
-            if (c.totalCompleted != null)
-              _choreLine('기간 내 완료', '${c.totalCompleted}회'),
-          ],
+          ),
         ),
       ),
     );
@@ -1013,7 +1120,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
               text: k,
               style: TextStyle(
                 color: Colors.white.withOpacity(0.65),
-                fontSize: 12,
+                fontSize: 13,
                 fontFamily: 'Pretendard Variable',
               ),
             ),
@@ -1022,7 +1129,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
               text: v,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 13,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 fontFamily: 'Pretendard Variable',
               ),
@@ -1053,7 +1160,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _sectionTitle('공용 소비 물품'),
+          _sectionTitle('공용 소비'),
           const SizedBox(height: 14),
           if (topRows.isEmpty && !_reportUseDummy)
             Padding(
@@ -1063,7 +1170,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.55),
-                  fontSize: 13,
+                  fontSize: 14,
                   fontFamily: 'Pretendard Variable',
                 ),
               ),
@@ -1087,7 +1194,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.58),
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: FontWeight.w500,
                   fontFamily: 'Pretendard Variable',
                   height: 1.4,
@@ -1096,7 +1203,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
             ),
             const SizedBox(height: 12),
             _simpleTable(
-              headers: const ['항목', '전월', '당월', '변동'],
+              headers: const ['항목', '전월 금액', '당월 금액', '변동률'],
               flexes: const [2, 2, 2, 2],
               rows: utilityDeltaRows
                   .map((e) => [e.name, e.prevMonth, e.thisMonth, e.rateLabel])
@@ -1108,7 +1215,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
               '공과금 변동 요약은 조회 기간이 31일 이내일 때만 표시돼요.',
               style: TextStyle(
                 color: Colors.white.withOpacity(0.5),
-                fontSize: 11,
+                fontSize: 12,
                 fontFamily: 'Pretendard Variable',
               ),
             ),
@@ -1119,7 +1226,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white.withOpacity(0.5),
-                fontSize: 12,
+                fontSize: 13,
                 fontFamily: 'Pretendard Variable',
               ),
             ),
@@ -1133,6 +1240,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
     final rows = _reportUseDummy
         ? _kReportDummyReservationRows
         : _apiReservationRows;
+    final metricLabel = _reservationMetricLabels[_reservationMetricIndex];
 
     return FrostedPanel(
       borderRadius: BorderRadius.circular(_borderRadiusLarge),
@@ -1142,7 +1250,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _sectionTitle('예약'),
-          const SizedBox(height: 14),
+          const SizedBox(height: 8),
           if (rows.isEmpty && !_reportUseDummy)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1151,33 +1259,69 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.55),
-                  fontSize: 13,
+                  fontSize: 14,
                   fontFamily: 'Pretendard Variable',
                 ),
               ),
             )
-          else
+          else ...[
+            Text(
+              '물품은 유지하고 보고 싶은 기준만 선택해서 확인해요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.72),
+                fontSize: 14,
+                fontFamily: 'Pretendard Variable',
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                for (var index = 0;
+                    index < _reservationMetricLabels.length;
+                    index++) ...[
+                  Expanded(
+                    child: SharedExpenseFilterChip(
+                      label: _reservationMetricLabels[index],
+                      selected: _reservationMetricIndex == index,
+                      width: double.infinity,
+                      horizontalPadding: 6,
+                      verticalPadding: 7,
+                      minHeight: 38,
+                      borderRadius: 19,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      onTap: () => setState(
+                        () => _reservationMetricIndex = index,
+                      ),
+                    ),
+                  ),
+                  if (index < _reservationMetricLabels.length - 1)
+                    const SizedBox(width: 8),
+                ],
+              ],
+            ),
+            const SizedBox(height: 14),
             _simpleTable(
-              headers: const ['물품', '가장 많이 사용', '가장 적게 사용', '사용 시간'],
-              flexes: const [2, 2, 2, 2],
+              headers: ['물품', metricLabel],
+              flexes: const [2, 3],
               rows: rows
-                  .map((e) => [e.item, e.mostUser, e.leastUser, e.usageTime])
+                  .map((e) => [e.item, _reservationMetricValue(e)])
                   .toList(),
             ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildSettlementSection() {
-    final goodsRows = _reportUseDummy
-        ? _kReportDummySettlementGoodsRows
-        : _apiSettlementGoodsRows;
-    final utilRows = _reportUseDummy
-        ? _kReportDummySettlementUtilRows
-        : _apiSettlementBillRows;
-
-    final rows = _settlementFilter == 0 ? goodsRows : utilRows;
+    final rows = _settlementRowsForCurrentFilter();
+    final pagedRows = _paginateSettlementRows(rows, _settlementItemsPerPage);
+    final pageIndexSafe =
+        _settlementPageIndex.clamp(0, pagedRows.length - 1).toInt();
+    final isUtility = _settlementFilter == 1;
 
     final utilHeaders = _reportUseDummy
         ? const ['내용', '납부일', '납부액', '비고']
@@ -1202,7 +1346,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withOpacity(0.72),
-              fontSize: 12,
+              fontSize: 13,
               fontFamily: 'Pretendard Variable',
               height: 1.35,
             ),
@@ -1218,7 +1362,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                   selected: _settlementFilter == 0,
                   width: double.infinity,
                   horizontalPadding: 12,
-                  onTap: () => setState(() => _settlementFilter = 0),
+                  onTap: () => _selectSettlementFilter(0),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1228,7 +1372,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                   selected: _settlementFilter == 1,
                   width: double.infinity,
                   horizontalPadding: 12,
-                  onTap: () => setState(() => _settlementFilter = 1),
+                  onTap: () => _selectSettlementFilter(1),
                 ),
               ),
             ],
@@ -1256,7 +1400,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.72),
-                  fontSize: 13,
+                  fontSize: 14,
                   fontFamily: 'Pretendard Variable',
                   height: 1.35,
                 ),
@@ -1270,21 +1414,43 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Colors.white.withOpacity(0.55),
-                  fontSize: 13,
+                  fontSize: 14,
                   fontFamily: 'Pretendard Variable',
                   height: 1.35,
                 ),
               ),
             )
           else
-            _simpleTable(
-              headers: _settlementFilter == 0
-                  ? const ['내용', '날짜', '금액', '수량']
-                  : utilHeaders,
-              flexes: const [3, 2, 2, 2],
-              rows: rows
-                  .map((e) => [e.content, e.date, e.amount, e.note])
-                  .toList(),
+            Column(
+              children: [
+                Text(
+                  '좌우로 넘기거나 화살표로 정산 내역을 볼 수 있어요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: 'Pretendard Variable',
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildSettlementPagedTable(
+                  headers: isUtility
+                      ? utilHeaders
+                      : const ['내용', '날짜', '금액', '수량'],
+                  flexes: isUtility
+                      ? const [4, 2, 3, 3]
+                      : const [4, 3, 3, 2],
+                  pages: pagedRows,
+                ),
+                const SizedBox(height: 10),
+                _buildPager(
+                  controller: _settlementPageController,
+                  pageCount: pagedRows.length,
+                  currentIndex: pageIndexSafe,
+                ),
+              ],
             ),
         ],
       ),
@@ -1294,13 +1460,13 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   Widget _buildSettlementDateRow() {
     const labelStyle = TextStyle(
       color: Colors.white70,
-      fontSize: 11,
+      fontSize: 12,
       fontWeight: FontWeight.w400,
       fontFamily: 'Pretendard Variable',
     );
     const dateStyle = TextStyle(
       color: Colors.white,
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: FontWeight.w600,
       fontFamily: 'Pretendard Variable',
     );
@@ -1344,6 +1510,254 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
     );
   }
 
+  Widget _buildSettlementPagedTable({
+    required List<String> headers,
+    required List<int> flexes,
+    required List<List<_SettlementReportRow>> pages,
+  }) {
+    final rowSlotHeight =
+        _settlementTablePageViewHeight / _settlementItemsPerPage;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildCompactTableHeader(headers: headers, flexes: flexes),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: _settlementTablePageViewHeight,
+          child: PageView.builder(
+            controller: _settlementPageController,
+            physics: const PageScrollPhysics(
+              parent: ClampingScrollPhysics(),
+            ),
+            itemCount: pages.length,
+            onPageChanged: (index) =>
+                setState(() => _settlementPageIndex = index),
+            itemBuilder: (context, pageIndex) {
+              final pageRows = pages[pageIndex];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < _settlementItemsPerPage; i++)
+                    SizedBox(
+                      height: rowSlotHeight,
+                      child: i < pageRows.length
+                          ? Align(
+                              alignment: Alignment.center,
+                              child: _buildSettlementRow(
+                                pageRows[i],
+                                flexes: flexes,
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCompactTableHeader({
+    required List<String> headers,
+    required List<int> flexes,
+  }) {
+    return SizedBox(
+      height: 34,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          for (var i = 0; i < headers.length; i++) ...[
+            if (i > 0) const SizedBox(width: 3),
+            Expanded(
+              flex: flexes[i],
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1),
+                child: FrostedPanel(
+                  borderRadius: BorderRadius.circular(20),
+                  backgroundOpacity: 0.4,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Center(
+                      child: Text(
+                        headers[i],
+                        style: _th,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettlementRow(
+    _SettlementReportRow row, {
+    required List<int> flexes,
+  }) {
+    const rowStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
+      height: 1.35,
+      fontFamily: 'Pretendard Variable',
+    );
+    const contentStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      height: 1.35,
+      fontFamily: 'Pretendard Variable',
+    );
+
+    Widget fittedCell(String text, TextStyle style) {
+      return Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.center,
+          child: Text(
+            text,
+            maxLines: 1,
+            softWrap: false,
+            textAlign: TextAlign.center,
+            style: style,
+          ),
+        ),
+      );
+    }
+
+    final values = [row.content, row.date, row.amount, row.note];
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        for (var i = 0; i < values.length; i++) ...[
+          if (i > 0) const SizedBox(width: 3),
+          Expanded(
+            flex: flexes[i],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: i == 0
+                  ? Text(
+                      values[i],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: contentStyle,
+                    )
+                  : fittedCell(values[i], rowStyle),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPager({
+    required PageController controller,
+    required int pageCount,
+    required int currentIndex,
+  }) {
+    void goPrev() {
+      if (currentIndex <= 0) return;
+      controller.previousPage(
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    }
+
+    void goNext() {
+      if (currentIndex >= pageCount - 1) return;
+      controller.nextPage(
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    }
+
+    final canPrev = pageCount > 1 && currentIndex > 0;
+    final canNext = pageCount > 1 && currentIndex < pageCount - 1;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildCircleArrow(
+          Icons.chevron_left,
+          enabled: canPrev,
+          onTap: canPrev ? goPrev : null,
+        ),
+        if (pageCount > 1) ...[
+          const SizedBox(width: 14),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(pageCount, (index) {
+              final active = index == currentIndex;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: active ? 16 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(3),
+                    color: Colors.white.withOpacity(active ? 0.95 : 0.35),
+                  ),
+                ),
+              );
+            }),
+          ),
+          const SizedBox(width: 14),
+        ] else
+          const SizedBox(width: 16),
+        _buildCircleArrow(
+          Icons.chevron_right,
+          enabled: canNext,
+          onTap: canNext ? goNext : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCircleArrow(
+    IconData icon, {
+    VoidCallback? onTap,
+    bool enabled = true,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        customBorder: const CircleBorder(),
+        child: Opacity(
+          opacity: enabled ? 1 : 0.35,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withOpacity(0.14),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.4),
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 18,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _sectionTitle(String t) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -1352,7 +1766,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
         textAlign: TextAlign.center,
         style: TextStyle(
           color: Colors.white,
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: FontWeight.w900,
           fontFamily: 'Pretendard Variable',
           height: 1.2,
@@ -1372,16 +1786,16 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   static const TextStyle _th = TextStyle(
     color: Colors.white,
     fontWeight: FontWeight.w800,
-    fontSize: 11,
-    height: 1.25,
+    fontSize: 12,
+    height: 1.3,
     fontFamily: 'Pretendard Variable',
   );
 
   static const TextStyle _td = TextStyle(
     color: Colors.white,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: FontWeight.w500,
-    height: 1.3,
+    height: 1.35,
     fontFamily: 'Pretendard Variable',
   );
 
@@ -1403,7 +1817,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                 Expanded(
                   flex: flexes[i],
                   child: FrostedPanel(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                     backgroundOpacity: 0.35,
                     padding:
                         const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
@@ -1424,7 +1838,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
         const SizedBox(height: 6),
         for (final r in rows)
           Padding(
-            padding: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.only(bottom: 6),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -1449,4 +1863,19 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
       ],
     );
   }
+}
+
+List<List<_SettlementReportRow>> _paginateSettlementRows(
+  List<_SettlementReportRow> rows,
+  int pageSize,
+) {
+  if (rows.isEmpty) {
+    return [[]];
+  }
+  final pages = <List<_SettlementReportRow>>[];
+  for (var i = 0; i < rows.length; i += pageSize) {
+    final end = i + pageSize > rows.length ? rows.length : i + pageSize;
+    pages.add(rows.sublist(i, end));
+  }
+  return pages;
 }

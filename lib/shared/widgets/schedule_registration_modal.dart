@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 import 'package:partition_app/features/partition/services/calendar_service.dart';
 import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
@@ -120,7 +121,7 @@ class _ScheduleRegistrationModalState extends State<ScheduleRegistrationModal> {
 
       String errorMessage = '일정 등록에 실패했습니다.';
       if (e is ApiException) {
-        errorMessage = e.message ?? errorMessage;
+        errorMessage = e.message;
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -207,12 +208,13 @@ class _ScheduleRegistrationModalState extends State<ScheduleRegistrationModal> {
                     vertical: 10,
                   ),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius:
+                        BorderRadius.circular(PartitionUiTokens.fieldRadius),
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.18),
+                      color: PartitionUiTokens.surfaceBorderSoft,
                       width: 0.5,
                     ),
-                    color: Colors.white.withOpacity(0.08),
+                    color: PartitionUiTokens.surfaceFillSoft,
                   ),
                   child: Row(
                     children: [
@@ -273,7 +275,8 @@ class _ScheduleRegistrationModalState extends State<ScheduleRegistrationModal> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius:
+                        BorderRadius.circular(PartitionUiTokens.fieldRadius),
                     border: Border.all(
                       color: Colors.white.withOpacity(0.3),
                       width: 0.5,
@@ -289,7 +292,8 @@ class _ScheduleRegistrationModalState extends State<ScheduleRegistrationModal> {
                     ),
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius:
+                        BorderRadius.circular(PartitionUiTokens.fieldRadius),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                       child: TextField(
@@ -338,56 +342,44 @@ class _ScheduleRegistrationModalState extends State<ScheduleRegistrationModal> {
   }
 
   Widget _buildRegisterButton() {
-    return _buildGlassmorphismButton(
-      text: '등록하기',
-      onTap: _isLoading ? () {} : _handleRegister,
+    return _buildSettingsStyleButton(
+      label: '등록하기',
+      onTap: _isLoading ? null : _handleRegister,
     );
   }
 
-  Widget _buildGlassmorphismButton({
-    required String text,
-    required VoidCallback onTap,
+  Widget _buildSettingsStyleButton({
+    required String label,
+    required VoidCallback? onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 266,
-        height: 45.327,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.white,
-            width: 0.5,
-          ),
-          gradient: const RadialGradient(
-            center: Alignment(-0.1212, -0.1178),
-            radius: 1.6319,
-            colors: [
-              Color.fromRGBO(255, 255, 255, 0.10),
-              Color.fromRGBO(255, 255, 255, 0.15),
-            ],
-            stops: [0.0, 1.0],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.white.withOpacity(0.25),
-              blurRadius: 30,
-              spreadRadius: 0,
-              offset: const Offset(4, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Center(
+    return SizedBox(
+      width: double.infinity,
+      height: PartitionUiTokens.actionButtonHeight,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius:
+              BorderRadius.circular(PartitionUiTokens.actionButtonRadius),
+          onTap: onTap,
+          child: Opacity(
+            opacity: onTap != null ? 1 : 0.48,
+            child: Container(
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(
+                  PartitionUiTokens.actionButtonRadius,
+                ),
+                border: Border.all(
+                  color: PartitionUiTokens.actionButtonBorder,
+                ),
+                color: PartitionUiTokens.actionButtonFill,
+              ),
               child: Text(
-                text,
+                label,
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                  color: PartitionUiTokens.actionText,
+                  fontSize: PartitionUiTokens.actionFontSize,
+                  fontWeight: PartitionUiTokens.actionWeight,
                   fontFamily: 'Pretendard Variable',
                 ),
               ),

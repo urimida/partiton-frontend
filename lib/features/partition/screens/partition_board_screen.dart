@@ -428,8 +428,8 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
             decoration: const BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Colors.white,
-                  width: 0.5,
+                  color: Color.fromRGBO(214, 218, 226, 0.8),
+                  width: 0.65,
                 ),
               ),
             ),
@@ -703,7 +703,7 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
                     const EdgeInsets.symmetric(horizontal: pad, vertical: 6),
                 child: Center(
                   child: Transform.translate(
-                    offset: const Offset(0, -0.5),
+                    offset: const Offset(0, 0),
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
@@ -1714,7 +1714,7 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                           ? Padding(
                               padding: const EdgeInsets.all(12),
                               child: Text(
-                                '등록된 예약 물품이 없습니다.\n아래「예약 대상 물품 추가」로 등록해 주세요.',
+                                '등록된 예약 물품이 없습니다.\n아래 + 버튼으로 등록해 주세요.',
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   color: Colors.white.withOpacity(0.55),
@@ -1784,13 +1784,44 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                             ),
                     ),
                     const SizedBox(height: 10),
-                    Center(
-                      child: PrimaryButton(
-                        label: '예약 대상 물품 추가',
-                        width: btnW,
-                        enabled: widget.onOpenReservationItemManage != null,
-                        onPressed: _openReservationItemManage,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Tooltip(
+                          message: '예약 대상 물품 추가',
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: widget.onOpenReservationItemManage == null
+                                  ? null
+                                  : _openReservationItemManage,
+                              customBorder: const CircleBorder(),
+                              child: Opacity(
+                                opacity:
+                                    widget.onOpenReservationItemManage == null
+                                        ? 0.35
+                                        : 1,
+                                child: Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withOpacity(0.14),
+                                    border: Border.all(
+                                      color: Colors.white.withOpacity(0.4),
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.add_rounded,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -1927,6 +1958,7 @@ class _ReservationItemManageDialog extends StatefulWidget {
 
 class _ReservationItemManageDialogState
     extends State<_ReservationItemManageDialog> {
+  static const double _kNameFieldHeight = 46;
   int _modeIndex = 0; // 0 = 추가, 1 = 수정
   late List<ReservationItem> _items;
   final TextEditingController _addNameCtrl = TextEditingController();
@@ -2030,7 +2062,8 @@ class _ReservationItemManageDialogState
   Widget build(BuildContext context) {
     final screenW = MediaQuery.sizeOf(context).width;
     final baseW = (screenW - 40).clamp(300.0, 350.0);
-    final dialogW = (baseW * 1.15).clamp(300.0, 400.0);
+    final dialogW = (baseW * 1.2).clamp(320.0, 420.0);
+    final btnW = (dialogW - 16).clamp(280.0, 404.0);
 
     final fieldStyle = TextStyle(
       color: Colors.white.withOpacity(0.95),
@@ -2045,204 +2078,241 @@ class _ReservationItemManageDialogState
       onTap: () => FocusScope.of(context).unfocus(),
       child: PartitionGlassDialog(
         constraints: BoxConstraints(maxWidth: dialogW, minWidth: dialogW),
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+        borderRadius: BorderRadius.circular(24),
+        blurSigma: 18,
+        borderColor: Colors.white.withOpacity(0.22),
+        gradient: const LinearGradient(
+          colors: [Colors.transparent, Colors.transparent],
+        ),
+        boxShadow: const [],
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
         child: GestureDetector(
           onTap: () {},
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-                        SizedBox(
-                          height: 32,
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              const Center(
-                                child: Text(
-                                  '예약 물품 추가/수정',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w800,
-                                    fontFamily: 'Pretendard Variable',
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                right: -8,
-                                child: IconButton(
-                                  onPressed: () => Navigator.of(context).pop(),
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    color: Colors.white70,
-                                  ),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              ),
-                            ],
-                          ),
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Text(
+                    '예약 물품 추가/수정',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                  Positioned(
+                    right: -8,
+                    top: -8,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white70,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                isAdd
+                    ? '예약할 물품을 새로 등록하세요.'
+                    : '등록된 물품 이름을 수정하세요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.72),
+                  fontSize: 12,
+                  fontFamily: 'Pretendard Variable',
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      color: Colors.white.withOpacity(0.08),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.25),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        _buildTab('추가', 0),
+                        _buildTab('수정', 1),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              if (isAdd) ...[
+                FrostedPanel(
+                  borderRadius: BorderRadius.circular(20),
+                  backgroundOpacity: 0.1,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 0,
+                  ),
+                  child: SizedBox(
+                    height: _kNameFieldHeight,
+                    child: TextField(
+                      controller: _addNameCtrl,
+                      style: fieldStyle,
+                      textAlignVertical: TextAlignVertical.center,
+                      decoration: InputDecoration(
+                        hintText: '새 예약 물품 이름 (예: 욕실, 세탁기)',
+                        hintStyle: TextStyle(
+                          color: Colors.white.withOpacity(0.45),
+                          fontSize: 13,
+                          fontFamily: 'Pretendard Variable',
                         ),
-                        const SizedBox(height: 14),
-                        // 탭 토글
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: BackdropFilter(
-                            filter:
-                                ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                color: Colors.white.withOpacity(0.08),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.25),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  _buildTab('추가', 0),
-                                  _buildTab('수정', 1),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (isAdd) ...[
-                          FrostedPanel(
-                            borderRadius: BorderRadius.circular(20),
-                            backgroundOpacity: 0.1,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            child: TextField(
-                              controller: _addNameCtrl,
-                              style: fieldStyle,
-                              textAlignVertical: TextAlignVertical.center,
-                              decoration: InputDecoration(
-                                hintText: '새 예약 물품 이름 (예: 욕실, 세탁기)',
-                                hintStyle: TextStyle(
-                                  color: Colors.white.withOpacity(0.45),
-                                  fontSize: 13,
-                                  fontFamily: 'Pretendard Variable',
-                                ),
-                                isDense: true,
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          _loading
-                              ? const Center(
-                                  child: SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                )
-                              : PrimaryButton(
-                                  label: '추가하기',
-                                  onPressed: _addItem,
-                                ),
-                        ] else ...[
-                          if (_items.isEmpty)
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 10),
+                        isDense: true,
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (_loading)
+                  Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white.withOpacity(0.85),
+                      ),
+                    ),
+                  )
+                else
+                  Center(
+                    child: PrimaryButton(
+                      label: '추가하기',
+                      width: btnW,
+                      onPressed: _addItem,
+                    ),
+                  ),
+              ] else ...[
+                if (_items.isEmpty)
+                  FrostedPanel(
+                    borderRadius: BorderRadius.circular(20),
+                    backgroundOpacity: 0.1,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    child: Text(
+                      '등록된 예약 물품이 없습니다.\n먼저 추가 탭에서 물품을 등록해주세요.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.6),
+                        fontSize: 12,
+                        fontFamily: 'Pretendard Variable',
+                        height: 1.45,
+                      ),
+                    ),
+                  )
+                else ...[
+                  FrostedPanel(
+                    borderRadius: BorderRadius.circular(20),
+                    backgroundOpacity: 0.1,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    child: DropdownButtonFormField<int>(
+                      value: _selectedEditItemId,
+                      isExpanded: true,
+                      dropdownColor: const Color(0xFF3A3A3C),
+                      iconEnabledColor: Colors.white70,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      ),
+                      style: fieldStyle,
+                      items: _items
+                          .map(
+                            (e) => DropdownMenuItem<int>(
+                              value: e.itemId,
                               child: Text(
-                                '등록된 예약 물품이 없습니다.\n먼저 추가 탭에서 물품을 등록해주세요.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.6),
-                                  fontSize: 12,
-                                  fontFamily: 'Pretendard Variable',
-                                  height: 1.5,
-                                ),
-                              ),
-                            )
-                          else ...[
-                            FrostedPanel(
-                              borderRadius: BorderRadius.circular(20),
-                              backgroundOpacity: 0.1,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              child: DropdownButtonFormField<int>(
-                                value: _selectedEditItemId,
-                                isExpanded: true,
-                                dropdownColor: const Color(0xFF3A3A3C),
-                                iconEnabledColor: Colors.white70,
-                                decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding:
-                                      EdgeInsets.symmetric(vertical: 8),
-                                ),
+                                e.name,
+                                overflow: TextOverflow.ellipsis,
                                 style: fieldStyle,
-                                items: _items
-                                    .map(
-                                      (e) => DropdownMenuItem<int>(
-                                        value: e.itemId,
-                                        child: Text(
-                                          e.name,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: fieldStyle,
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (id) {
-                                  if (id == null) return;
-                                  setState(() {
-                                    _selectedEditItemId = id;
-                                    _syncEditFieldToSelection();
-                                  });
-                                },
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            FrostedPanel(
-                              borderRadius: BorderRadius.circular(20),
-                              backgroundOpacity: 0.1,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6),
-                              child: TextField(
-                                controller: _editNameCtrl,
-                                style: fieldStyle,
-                                textAlignVertical: TextAlignVertical.center,
-                                decoration: InputDecoration(
-                                  hintText: '수정할 이름',
-                                  hintStyle: TextStyle(
-                                    color: Colors.white.withOpacity(0.45),
-                                    fontSize: 13,
-                                    fontFamily: 'Pretendard Variable',
-                                  ),
-                                  isDense: true,
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            _loading
-                                ? const Center(
-                                    child: SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white70,
-                                      ),
-                                    ),
-                                  )
-                                : PrimaryButton(
-                                    label: '수정하기',
-                                    onPressed: _editItem,
-                                  ),
-                          ],
-                        ],
+                          )
+                          .toList(),
+                      onChanged: (id) {
+                        if (id == null) return;
+                        setState(() {
+                          _selectedEditItemId = id;
+                          _syncEditFieldToSelection();
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  FrostedPanel(
+                    borderRadius: BorderRadius.circular(20),
+                    backgroundOpacity: 0.1,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 0,
+                    ),
+                    child: SizedBox(
+                      height: _kNameFieldHeight,
+                      child: TextField(
+                        controller: _editNameCtrl,
+                        style: fieldStyle,
+                        textAlignVertical: TextAlignVertical.center,
+                        decoration: InputDecoration(
+                          hintText: '수정할 이름',
+                          hintStyle: TextStyle(
+                            color: Colors.white.withOpacity(0.45),
+                            fontSize: 13,
+                            fontFamily: 'Pretendard Variable',
+                          ),
+                          isDense: true,
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_loading)
+                    Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white.withOpacity(0.85),
+                        ),
+                      ),
+                    )
+                  else
+                    Center(
+                      child: PrimaryButton(
+                        label: '수정하기',
+                        width: btnW,
+                        onPressed: _editItem,
+                      ),
+                    ),
+                ],
+              ],
             ],
           ),
         ),
@@ -2261,12 +2331,15 @@ class _ReservationItemManageDialogState
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           margin: const EdgeInsets.all(3),
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 9),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             color: selected
                 ? Colors.white.withOpacity(0.22)
                 : Colors.transparent,
+            border: selected
+                ? Border.all(color: Colors.white.withOpacity(0.2), width: 0.5)
+                : null,
           ),
           child: Text(
             label,

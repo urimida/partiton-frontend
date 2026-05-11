@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 
 /// 글래스모피즘 효과를 적용한 버튼 컴포넌트
 /// width: 183px, height: 31px 기본값
@@ -30,6 +31,7 @@ class _GlassmorphismButtonState extends State<GlassmorphismButton> {
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(widget.height / 2);
     return GestureDetector(
       onTapDown: widget.enabled
           ? (_) {
@@ -63,20 +65,16 @@ class _GlassmorphismButtonState extends State<GlassmorphismButton> {
             width: widget.width,
             height: widget.height,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: radius,
               border: Border.all(
-                color: Colors.white,
+                color: widget.enabled
+                    ? PartitionUiTokens.actionButtonBorder
+                    : PartitionUiTokens.actionButtonBorderDisabled,
                 width: 0.5,
               ),
-              gradient: const RadialGradient(
-                center: Alignment(-0.1212, -0.1178),
-                radius: 1.6319,
-                colors: [
-                  Color.fromRGBO(255, 255, 255, 0.10),
-                  Color.fromRGBO(255, 255, 255, 0.15),
-                ],
-                stops: [0.0, 1.0],
-              ),
+              color: widget.enabled
+                  ? PartitionUiTokens.actionButtonFill
+                  : PartitionUiTokens.actionButtonFillDisabled,
               boxShadow: [
                 BoxShadow(
                   color: Colors.white.withOpacity(0.25),
@@ -87,16 +85,18 @@ class _GlassmorphismButtonState extends State<GlassmorphismButton> {
               ],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: radius,
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                 child: Center(
                   child: Text(
                     widget.text,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+                    style: TextStyle(
+                      color: widget.enabled
+                          ? PartitionUiTokens.actionText
+                          : PartitionUiTokens.actionTextDisabled,
+                      fontSize: PartitionUiTokens.actionFontSize,
+                      fontWeight: PartitionUiTokens.actionWeight,
                     ),
                   ),
                 ),
@@ -130,24 +130,17 @@ class GlassmorphismInputField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(PartitionUiTokens.fieldRadius);
     return Container(
       width: width,
       height: height,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: radius,
         border: Border.all(
-          color: Colors.white,
+          color: PartitionUiTokens.surfaceBorderSoft,
           width: 0.5,
         ),
-        gradient: const RadialGradient(
-          center: Alignment(-0.1212, -0.1178),
-          radius: 1.6319,
-          colors: [
-            Color.fromRGBO(255, 255, 255, 0.10),
-            Color.fromRGBO(255, 255, 255, 0.15),
-          ],
-          stops: [0.0, 1.0],
-        ),
+        color: PartitionUiTokens.surfaceFillSoft,
         boxShadow: [
           BoxShadow(
             color: Colors.white.withOpacity(0.25),
@@ -158,7 +151,7 @@ class GlassmorphismInputField extends StatelessWidget {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: radius,
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: TextField(
@@ -166,16 +159,16 @@ class GlassmorphismInputField extends StatelessWidget {
             onChanged: onChanged,
             autofocus: autofocus,
             style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
+              color: PartitionUiTokens.textPrimary,
+              fontSize: PartitionUiTokens.bodyFontSize,
             ),
             decoration: InputDecoration(
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               border: InputBorder.none,
               hintText: hintText,
-              hintStyle: const TextStyle(
-                color: Colors.white70,
-                fontSize: 14,
+              hintStyle: TextStyle(
+                color: PartitionUiTokens.textHint(0.7),
+                fontSize: PartitionUiTokens.bodyFontSize,
               ),
             ),
           ),

@@ -1,0 +1,19 @@
+---
+description: Partition UI component styling and normalization rules
+globs: lib/{features/partition,shared/widgets}/**/*.dart
+alwaysApply: false
+---
+
+# Partition UI Components
+
+- 홈 화면의 `PrimaryButton` 스타일을 파티션 UI의 기본 액션 버튼 기준으로 본다.
+- 버튼 스타일을 바꿔야 하면 각 버튼 인스턴스를 따로 수정하기보다 공용 helper나 공용 위젯부터 정리한다.
+- `일정 등록`, `집안일 자동 배정`, `설정`, `귀가 공유`, `공용소비/공과금`처럼 같은 역할의 액션 버튼은 radius, 높이, 텍스트 크기를 통일한다.
+- 설정 모달 계열의 버튼은 한 파일 안에서 서로 다른 radius/폰트 두께를 섞지 않는다.
+- 입력창, 선택칩, 드롭다운, 주소/상태 패널도 가능한 범위에서 공통 field radius 규칙을 따른다.
+- 새 UI를 추가할 때는 먼저 기존 helper가 있는지 찾는다:
+  - `PrimaryButton`
+  - settings-style action helper
+  - tokenized field/panel decoration
+- 새로운 helper를 만들었다면 같은 화면 안의 유사 컴포넌트도 함께 정리해 one-off 스타일이 남지 않게 한다.
+- 큰 스타일 정리는 끝난 뒤 `ReadLints` 또는 분석으로 문법/타입 오류를 반드시 확인한다.

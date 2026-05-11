@@ -7,6 +7,7 @@ import 'package:partition_app/features/partition/models/supply_category_model.da
 import 'package:partition_app/features/partition/models/supply_purchase_model.dart';
 import 'package:partition_app/features/partition/services/supply_service.dart';
 import 'package:partition_app/features/partition/services/utility_bill_service.dart';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 import 'package:partition_app/features/partition/utils/supply_purchase_input.dart';
 import 'package:partition_app/shared/widgets/glassmorphic_date_picker.dart';
 import 'package:partition_app/shared/widgets/glassmorphism_widget.dart';
@@ -1060,7 +1061,7 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
           onTap: _openAddForm,
         ),
         const SizedBox(height: 10),
-        _glassPillButton(
+        _settingsModalActionButton(
           label: '저장',
           onTap: _applyAndClose,
         ),
@@ -1281,7 +1282,7 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
                 ),
         ),
         const SizedBox(height: 14),
-        _glassPillButton(
+        _settingsModalActionButton(
           label: (_submittingPurchase || _submittingUtilityBill)
               ? '등록 중…'
               : '저장',
@@ -1571,7 +1572,7 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
   }) {
     final enabled = onTap != null;
     return SizedBox(
-      height: 46,
+      height: PartitionUiTokens.actionButtonHeight,
       child: GestureDetector(
         onTap: onTap,
         child: ClipRRect(
@@ -1605,6 +1606,48 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
                   color: Colors.white.withOpacity(enabled ? 1 : 0.45),
                   fontSize: 14,
                   fontWeight: FontWeight.w400,
+                  fontFamily: 'Pretendard Variable',
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _settingsModalActionButton({
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    final enabled = onTap != null;
+    return SizedBox(
+      height: PartitionUiTokens.actionButtonHeight,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius:
+              BorderRadius.circular(PartitionUiTokens.actionButtonRadius),
+          onTap: onTap,
+          child: Opacity(
+            opacity: enabled ? 1 : 0.48,
+            child: Container(
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(
+                  PartitionUiTokens.actionButtonRadius,
+                ),
+                border: Border.all(
+                  color: PartitionUiTokens.actionButtonBorder,
+                ),
+                color: PartitionUiTokens.actionButtonFill,
+              ),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: PartitionUiTokens.actionText,
+                  fontSize: PartitionUiTokens.actionFontSize,
+                  fontWeight: PartitionUiTokens.actionWeight,
                   fontFamily: 'Pretendard Variable',
                 ),
               ),

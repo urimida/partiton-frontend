@@ -6,8 +6,10 @@ import 'package:partition_app/features/partition/models/shared_expense_table_ite
 class SharedExpenseItemDetailSheet extends StatefulWidget {
   final SharedExpenseTableItem item;
   final bool isUtility;
-  /// API 정산 연동 시 예외로 실패를 알리고, switch는 이전 값으로 복구할 수 있게 [Future] 사용
-  final Future<void> Function(bool) onSettlementChanged;
+  /// 정산 요청 버튼 액션
+  final Future<void> Function()? onSettlementRequest;
+  /// 정산 완료 처리 버튼 액션
+  final Future<void> Function()? onSettlementComplete;
   /// 시트를 닫은 뒤 내역 수정 다이얼로그를 연다
   final VoidCallback? onEditRequested;
   /// 시트를 닫은 뒤 삭제 확인·처리
@@ -17,7 +19,8 @@ class SharedExpenseItemDetailSheet extends StatefulWidget {
     super.key,
     required this.item,
     required this.isUtility,
-    required this.onSettlementChanged,
+    this.onSettlementRequest,
+    this.onSettlementComplete,
     this.onEditRequested,
     this.onDeleteRequested,
   });
@@ -30,6 +33,8 @@ class SharedExpenseItemDetailSheet extends StatefulWidget {
 class _SharedExpenseItemDetailSheetState
     extends State<SharedExpenseItemDetailSheet> {
   late bool _settled;
+  bool _requestingSettlement = false;
+  bool _completingSettlement = false;
 
   @override
   void initState() {
@@ -64,15 +69,99 @@ class _SharedExpenseItemDetailSheetState
     return '$a, $q';
   }
 
+  String get _displayDateLine {
+    final raw = widget.item.date.trim();
+    if (raw.isEmpty) return raw;
+
+    final isoMatch = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(raw);
+    if (isoMatch != null) {
+      return '${isoMatch.group(1)}.${isoMatch.group(2)}.${isoMatch.group(3)}.';
+    }
+
+    final dottedMatch =
+        RegExp(r'^(\d{2}|\d{4})\.(\d{2})\.(\d{2})\.$').firstMatch(raw);
+    if (dottedMatch != null) {
+      final year = dottedMatch.group(1)!;
+      final normalizedYear = year.length == 2 ? '20$year' : year;
+      return '$normalizedYear.${dottedMatch.group(2)}.${dottedMatch.group(3)}.';
+    }
+
+    return raw;
+  }
+
   String get _dummyAiBlock {
     if (widget.isUtility) {
-      return '이 항목은 공과금 성격의 고정·주기 청구로 추정돼요. (더미 분석)\n'
+      return '이 항목은 공과금 성격의 고정·주기 청구로 추정돼요.\n'
           '납부 주기와 금액 변동을 다음 달 예산에 반영해 보세요.';
     }
     return '해당 용품은 30일에 한 번 정도 구매하고 있네요!\n'
         '평균 구매 가격은 약 ${widget.item.amount}이고,\n'
-        '저번 달에는 특히 빠른 주기로 구매했어요.\n'
-        '(실제 연동 전 더미 텍스트입니다.)';
+        '저번 달에는 특히 빠른 주기로 구매했어요.';
+  }
+
+  Future<void> _handleSettlementRequest() async {
+    final action = widget.onSettlementRequest;
+    if (action == null || _requestingSettlement || _completingSettlement) return;
+    setState(() => _requestingSettlement = true);
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        setState(() => _requestingSettlement = false);
+      }
+    }
+  }
+
+  Future<void> _handleSettlementComplete() async {
+    final action = widget.onSettlementComplete;
+    if (action == null || _requestingSettlement || _completingSettlement) return;
+    setState(() => _completingSettlement = true);
+    try {
+      await action();
+      if (mounted) {
+        setState(() => _settled = true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _completingSettlement = false);
+      }
+    }
+  }
+
+  Widget _buildSettlementActionButton({
+    required String label,
+    required VoidCallback? onPressed,
+    bool danger = false,
+  }) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: danger
+            ? const Color.fromRGBO(255, 180, 180, 1.0)
+            : Colors.white,
+        side: BorderSide(
+          color: danger
+              ? Colors.redAccent.withOpacity(0.55)
+              : Colors.white.withOpacity(onPressed == null ? 0.18 : 0.45),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: onPressed == null
+              ? Colors.white.withOpacity(0.42)
+              : (danger
+                    ? const Color.fromRGBO(255, 180, 180, 1.0)
+                    : Colors.white),
+          fontWeight: FontWeight.w600,
+          fontFamily: 'Pretendard Variable',
+        ),
+      ),
+    );
   }
 
   @override
@@ -128,7 +217,7 @@ class _SharedExpenseItemDetailSheetState
                       children: [
                         Expanded(
                           child: Text(
-                            widget.item.name,
+                            widget.item.displayLabel,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 18,
@@ -149,7 +238,7 @@ class _SharedExpenseItemDetailSheetState
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      widget.item.date,
+                      _displayDateLine,
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.82),
                         fontSize: 14,
@@ -280,7 +369,7 @@ class _SharedExpenseItemDetailSheetState
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      '정산여부 관리',
+                      '정산 관리',
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.55),
                         fontSize: 12,
@@ -303,35 +392,61 @@ class _SharedExpenseItemDetailSheetState
                       child: Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              _settled ? '정산 완료로 표시됨' : '정산 전',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _settled ? '정산 완료' : '정산 전',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _settled
+                                      ? '이 항목은 정산이 끝났어요.'
+                                      : '정산 요청과 완료 처리를 구분해서 진행할 수 있어요.',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.62),
+                                    fontSize: 12,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          Switch.adaptive(
-                            value: _settled,
-                            activeColor: Colors.white,
-                            activeTrackColor: Colors.white.withOpacity(0.45),
-                            inactiveThumbColor: Colors.white54,
-                            inactiveTrackColor: Colors.white.withOpacity(0.2),
-                            onChanged: (v) async {
-                              final was = _settled;
-                              setState(() => _settled = v);
-                              try {
-                                await widget.onSettlementChanged(v);
-                              } catch (_) {
-                                if (mounted) {
-                                  setState(() => _settled = was);
-                                }
-                              }
-                            },
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildSettlementActionButton(
+                            label: _requestingSettlement ? '요청 중...' : '정산 요청',
+                            onPressed: _settled
+                                ? null
+                                : () {
+                                    _handleSettlementRequest();
+                                  },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildSettlementActionButton(
+                            label: _completingSettlement
+                                ? '처리 중...'
+                                : (_settled ? '정산 완료됨' : '정산 완료 처리'),
+                            onPressed: _settled
+                                ? null
+                                : () {
+                                    _handleSettlementComplete();
+                                  },
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

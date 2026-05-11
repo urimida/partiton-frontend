@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:partition_app/features/partition/providers/home_share_provider.dart';
 import 'package:partition_app/features/partition/theme/home_share_style.dart';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 import 'package:partition_app/features/partition/services/geocoding_service.dart';
 import 'package:partition_app/shared/widgets/home_calendar_widget.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
@@ -306,12 +307,10 @@ class _PartitionGlassModalCard extends StatelessWidget {
   const _PartitionGlassModalCard({
     required this.child,
     this.maxWidth = 350,
-    this.maxHeight,
   });
 
   final Widget child;
   final double maxWidth;
-  final double? maxHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -321,7 +320,6 @@ class _PartitionGlassModalCard extends StatelessWidget {
     return PartitionGlassDialog(
       constraints: BoxConstraints(
         maxWidth: capWidth,
-        maxHeight: maxHeight ?? double.infinity,
       ),
       fillColor: Colors.transparent,
       child: child,
@@ -453,7 +451,8 @@ class _HomeShareCard extends StatelessWidget {
                       margin: const EdgeInsets.only(right: 8),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.07),
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius:
+                            BorderRadius.circular(PartitionUiTokens.fieldRadius),
                         border: Border.all(
                           color: Colors.white.withOpacity(0.16),
                         ),
@@ -748,7 +747,9 @@ class _HomeLocationSetupDialogState extends State<_HomeLocationSetupDialog> {
                   foregroundColor: HomeShareStyle.main,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(
+                      PartitionUiTokens.actionButtonRadius,
+                    ),
                   ),
                   elevation: 0,
                 ),
@@ -765,8 +766,8 @@ class _HomeLocationSetupDialogState extends State<_HomeLocationSetupDialog> {
                 label: Text(
                   _loading ? '위치 가져오는 중...' : '현재 위치를 집으로 설정',
                   style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontSize: PartitionUiTokens.actionFontSize,
+                    fontWeight: PartitionUiTokens.actionWeight,
                     fontFamily: 'Pretendard Variable',
                     decoration: TextDecoration.none,
                   ),
@@ -1024,7 +1025,9 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                                 color: hasAddress
                                     ? HomeShareStyle.point.withOpacity(0.08)
                                     : HomeShareStyle.main.withOpacity(0.28),
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(
+                                  PartitionUiTokens.fieldRadius,
+                                ),
                                 border: Border.all(
                                   color: hasAddress
                                       ? HomeShareStyle.pointStroke(0.28)
@@ -1140,7 +1143,9 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 13),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(
+                                    PartitionUiTokens.actionButtonRadius,
+                                  ),
                                 ),
                                 elevation: 0,
                               ),
@@ -1159,8 +1164,8 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                                     ? '위치 가져오는 중...'
                                     : '현재 위치로 설정',
                                 style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
+                                  fontSize: PartitionUiTokens.actionFontSize,
+                                  fontWeight: PartitionUiTokens.actionWeight,
                                   decoration: TextDecoration.none,
                                 ),
                               ),
@@ -1197,7 +1202,9 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                           Container(
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.07),
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(
+                                PartitionUiTokens.fieldRadius,
+                              ),
                               border: Border.all(
                                   color: Colors.white.withOpacity(0.15)),
                             ),
@@ -1283,11 +1290,15 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                           if (_suggestions.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(
+                                PartitionUiTokens.fieldRadius,
+                              ),
                               child: Container(
                                 decoration: BoxDecoration(
                                   color: Colors.white.withOpacity(0.06),
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(
+                                    PartitionUiTokens.fieldRadius,
+                                  ),
                                   border: Border.all(
                                       color: Colors.white.withOpacity(0.12)),
                                 ),

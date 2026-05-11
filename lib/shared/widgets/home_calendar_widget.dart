@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
 import 'package:partition_app/features/partition/services/calendar_service.dart';
 import 'package:partition_app/features/partition/services/chore_service.dart';
-import 'package:partition_app/features/partition/models/calendar_response_model.dart';
 import 'package:partition_app/features/partition/models/daily_calendar_response_model.dart';
 import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/core/storage/storage_service.dart';
@@ -13,6 +12,7 @@ import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
 import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 import 'package:partition_app/shared/utils/partition_dummy_data_policy.dart';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 
 const _kChoreTaskNames = ['설거지', '빨래', '청소', '분리수거'];
 const _kOtherMemberNames = ['홍길동', '김민수', '이영희', '박서준'];
@@ -893,6 +893,77 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     );
   }
 
+  Future<void> _showFutureChoreBlockedDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (ctx) => PartitionGlassDialog(
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+        borderRadius: BorderRadius.circular(24),
+        blurSigma: 18,
+        borderColor: Colors.white.withOpacity(0.22),
+        gradient: const LinearGradient(
+          colors: [Colors.transparent, Colors.transparent],
+        ),
+        boxShadow: const [],
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '완료 표시 불가',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '아직 오지 않은 날의 집안일은\n완료 표시를 할 수 없어요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.normal,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+            const SizedBox(height: 24),
+            GestureDetector(
+              onTap: () => Navigator.of(ctx).pop(),
+              child: Container(
+                height: 45,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(
+                    PartitionUiTokens.actionButtonRadius,
+                  ),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.4),
+                    width: 0.5,
+                  ),
+                  color: Colors.white.withOpacity(0.15),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  '확인',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: PartitionUiTokens.actionFontSize,
+                    fontWeight: PartitionUiTokens.actionWeight,
+                    fontFamily: 'Pretendard Variable',
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleToggleChoreCompletion(
     int choreId,
     bool completed,
@@ -905,6 +976,16 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
         _previewChoreCompleted[choreId] = completed;
       });
       return;
+    }
+    // 미래 날짜에 완료 표시 시도 시 차단
+    if (completed) {
+      final today = DateTime.now();
+      final todayMidnight = DateTime(today.year, today.month, today.day);
+      final dateMidnight = DateTime(date.year, date.month, date.day);
+      if (dateMidnight.isAfter(todayMidnight)) {
+        await _showFutureChoreBlockedDialog();
+        return;
+      }
     }
     if (_choreToggleInProgress.contains(choreId)) return;
     setState(() => _choreToggleInProgress.add(choreId));
@@ -1044,7 +1125,7 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
 
       // API 응답 확인 (isSuccess 체크)
       if (!response.isSuccess) {
-        throw Exception(response.message ?? '일정 삭제에 실패했습니다.');
+        throw Exception(response.message);
       }
 
       // 캐시 무효화 및 재로드
@@ -1343,48 +1424,35 @@ class HomeCalendarWidgetState extends State<HomeCalendarWidget> {
     required String text,
     required VoidCallback onTap,
     double width = 100,
-    double height = 45.327,
+    double height = PartitionUiTokens.actionButtonHeight,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: width,
-        height: height,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.white,
-            width: 0.5,
-          ),
-          gradient: const RadialGradient(
-            center: Alignment(-0.1212, -0.1178),
-            radius: 1.6319,
-            colors: [
-              Color.fromRGBO(255, 255, 255, 0.10),
-              Color.fromRGBO(255, 255, 255, 0.15),
-            ],
-            stops: [0.0, 1.0],
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.white.withOpacity(0.25),
-              blurRadius: 30,
-              spreadRadius: 0,
-              offset: const Offset(4, 4),
+    return SizedBox(
+      width: width,
+      height: height,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius:
+              BorderRadius.circular(PartitionUiTokens.actionButtonRadius),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(
+                PartitionUiTokens.actionButtonRadius,
+              ),
+              border: Border.all(
+                color: PartitionUiTokens.actionButtonBorder,
+                width: 0.5,
+              ),
+              color: PartitionUiTokens.actionButtonFill,
             ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Center(
               child: Text(
                 text,
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                  color: PartitionUiTokens.actionText,
+                  fontSize: PartitionUiTokens.actionFontSize,
+                  fontWeight: PartitionUiTokens.actionWeight,
                   fontFamily: 'Pretendard Variable',
                 ),
               ),

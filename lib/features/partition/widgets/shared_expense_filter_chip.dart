@@ -8,6 +8,10 @@ class SharedExpenseFilterChip extends StatelessWidget {
   final double? width;
   final double? horizontalPadding;
   final double verticalPadding;
+  final double minHeight;
+  final double borderRadius;
+  final double fontSize;
+  final FontWeight fontWeight;
 
   const SharedExpenseFilterChip({
     super.key,
@@ -17,6 +21,10 @@ class SharedExpenseFilterChip extends StatelessWidget {
     this.width,
     this.horizontalPadding,
     this.verticalPadding = 11,
+    this.minHeight = 44,
+    this.borderRadius = 24,
+    this.fontSize = 14,
+    this.fontWeight = FontWeight.w800,
   });
 
   @override
@@ -30,9 +38,9 @@ class SharedExpenseFilterChip extends StatelessWidget {
           horizontal: horizontalPadding ?? 28,
           vertical: verticalPadding,
         ),
-        constraints: const BoxConstraints(minHeight: 44),
+        constraints: BoxConstraints(minHeight: minHeight),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(borderRadius),
           color: selected
               ? Colors.white.withOpacity(0.35)
               : Colors.white.withOpacity(0.12),
@@ -51,8 +59,8 @@ class SharedExpenseFilterChip extends StatelessWidget {
             color: selected
                 ? Colors.white
                 : Colors.white.withOpacity(0.68),
-            fontWeight: FontWeight.w800,
-            fontSize: 14,
+            fontWeight: fontWeight,
+            fontSize: fontSize,
             height: 1.2,
           ),
         ),

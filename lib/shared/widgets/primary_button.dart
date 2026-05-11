@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
 
 /// 앱 전반에서 사용할 기본 버튼 스타일 (버튼 1)
@@ -16,12 +16,13 @@ class PrimaryButton extends StatelessWidget {
     required this.onPressed,
     this.enabled = true,
     this.width = 360,
-    this.height = 46,
+    this.height = PartitionUiTokens.actionButtonHeight,
   });
 
   @override
   Widget build(BuildContext context) {
-    final BorderRadius pillRadius = BorderRadius.circular(height / 2);
+    final BorderRadius pillRadius =
+        BorderRadius.circular(PartitionUiTokens.actionButtonRadius);
     final active = enabled;
 
     return SizedBox(
@@ -35,13 +36,13 @@ class PrimaryButton extends StatelessWidget {
           backgroundOpacity: active ? 0.08 : 0.04,
           showStroke: true,
           borderColor: active
-              ? const Color.fromRGBO(255, 255, 255, 0.25)
-              : const Color.fromRGBO(160, 160, 170, 0.55),
+              ? PartitionUiTokens.actionButtonBorder
+              : PartitionUiTokens.actionButtonBorderDisabled,
           child: TextButton(
             style: TextButton.styleFrom(
               padding: EdgeInsets.zero,
-              foregroundColor: Colors.white,
-              disabledForegroundColor: Colors.white.withOpacity(0.38),
+              foregroundColor: PartitionUiTokens.actionText,
+              disabledForegroundColor: PartitionUiTokens.actionTextDisabled,
               shape: RoundedRectangleBorder(borderRadius: pillRadius),
               backgroundColor: Colors.transparent,
             ),
@@ -52,11 +53,11 @@ class PrimaryButton extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: active
-                      ? Colors.white
-                      : Colors.white.withOpacity(0.42),
+                      ? PartitionUiTokens.actionText
+                      : PartitionUiTokens.actionTextDisabled,
                   fontFamily: 'Pretendard Variable',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
+                  fontSize: PartitionUiTokens.actionFontSize,
+                  fontWeight: PartitionUiTokens.actionWeight,
                   fontStyle: FontStyle.normal,
                   fontFeatures: const [
                     FontFeature.tabularFigures(),

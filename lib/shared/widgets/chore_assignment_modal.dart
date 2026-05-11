@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:partition_app/core/network/api_exception.dart';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 import 'package:partition_app/features/partition/services/chore_service.dart';
 import 'package:partition_app/features/partition/services/calendar_service.dart';
 import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
@@ -390,112 +391,170 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
       // 집안일 이름을 API enum 값으로 변환
       final choreTypes = _convertChoreNamesToEnum(selectedChoresList);
 
+      // 중복 여부 확인 (첫 번째 중복만 감지해서 한 번에 물어봄)
+      Map<String, dynamic>? firstDuplicate;
       for (final range in selectedRanges) {
         final duplicateCheck = await _checkDuplicateChores(
           choreTypes,
           range.start,
           range.end,
         );
-
         if (duplicateCheck != null && duplicateCheck['hasDuplicate'] == true) {
-          setState(() {
-            _isLoading = false;
-          });
+          firstDuplicate = duplicateCheck;
+          break;
+        }
+      }
 
-          final choreName = duplicateCheck['choreName'] as String;
-          final date = duplicateCheck['date'] as String;
+      if (firstDuplicate != null) {
+        setState(() {
+          _isLoading = false;
+        });
 
-          await showDialog(
-            context: context,
-            barrierColor: Colors.black.withOpacity(0.5),
-            builder: (context) => PartitionGlassDialog(
-              insetPadding: const EdgeInsets.symmetric(horizontal: 20),
-              borderRadius: BorderRadius.circular(24),
-              blurSigma: 18,
-              borderColor: Colors.white.withOpacity(0.22),
-              gradient: const LinearGradient(
-                colors: [Colors.transparent, Colors.transparent],
-              ),
-              boxShadow: const [],
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    '집안일 중복 배정',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      fontFamily: 'Pretendard Variable',
-                    ),
+        final choreName = firstDuplicate['choreName'] as String;
+        final date = firstDuplicate['date'] as String;
+
+        final confirmed = await showDialog<bool>(
+          context: context,
+          barrierColor: Colors.black.withOpacity(0.5),
+          builder: (context) => PartitionGlassDialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+            borderRadius: BorderRadius.circular(24),
+            blurSigma: 18,
+            borderColor: Colors.white.withOpacity(0.22),
+            gradient: const LinearGradient(
+              colors: [Colors.transparent, Colors.transparent],
+            ),
+            boxShadow: const [],
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  '기존 배정 덮어쓰기',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    fontFamily: 'Pretendard Variable',
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    '$date에 이미\n"$choreName" 집안일이 배정되어 있습니다.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.normal,
-                      fontFamily: 'Pretendard Variable',
-                    ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '$date에 이미\n"$choreName" 집안일이 배정되어 있어요.\n기존 배정을 지우고 새로 배정할까요?',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.normal,
+                    fontFamily: 'Pretendard Variable',
                   ),
-                  const SizedBox(height: 24),
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).pop(),
-                    child: Container(
-                      width: 150,
-                      height: 45.327,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 0.5,
-                        ),
-                        gradient: const RadialGradient(
-                          center: Alignment(-0.1212, -0.1178),
-                          radius: 1.6319,
-                          colors: [
-                            Color.fromRGBO(255, 255, 255, 0.10),
-                            Color.fromRGBO(255, 255, 255, 0.15),
-                          ],
-                          stops: [0.0, 1.0],
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.white.withOpacity(0.25),
-                            blurRadius: 30,
-                            spreadRadius: 0,
-                            offset: const Offset(4, 4),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(false),
+                        child: Container(
+                          height: 45.327,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              PartitionUiTokens.actionButtonRadius,
+                            ),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.4),
+                              width: 0.5,
+                            ),
                           ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                          child: const Center(
-                            child: Text(
-                              '확인',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                fontFamily: 'Pretendard Variable',
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              PartitionUiTokens.actionButtonRadius,
+                            ),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                              child: const Center(
+                                child: Text(
+                                  '취소',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w400,
+                                    fontFamily: 'Pretendard Variable',
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(true),
+                        child: Container(
+                          height: 45.327,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              PartitionUiTokens.actionButtonRadius,
+                            ),
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 0.5,
+                            ),
+                            gradient: const RadialGradient(
+                              center: Alignment(-0.1212, -0.1178),
+                              radius: 1.6319,
+                              colors: [
+                                Color.fromRGBO(255, 255, 255, 0.10),
+                                Color.fromRGBO(255, 255, 255, 0.20),
+                              ],
+                              stops: [0.0, 1.0],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.white.withOpacity(0.25),
+                                blurRadius: 30,
+                                spreadRadius: 0,
+                                offset: const Offset(4, 4),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(
+                              PartitionUiTokens.actionButtonRadius,
+                            ),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                              child: const Center(
+                                child: Text(
+                                  '덮어쓰기',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: 'Pretendard Variable',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          );
-          return;
-        }
+          ),
+        );
+
+        if (confirmed != true) return;
+
+        // 덮어쓰기 확인 후 로딩 재개
+        setState(() {
+          _isLoading = true;
+        });
       }
 
       debugPrint('═══════════════════════════════════════════════════════');
@@ -539,8 +598,8 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
       });
 
       String message = '집안일 자동 배정에 실패했어요.';
-      if (e is ApiException && e.message != null) {
-        message = e.message!;
+      if (e is ApiException) {
+        message = e.message;
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -552,8 +611,35 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
     }
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}.';
+  Widget _buildSettingsStyleButton({
+    required Widget child,
+    required VoidCallback? onTap,
+    double height = PartitionUiTokens.actionButtonHeight,
+  }) {
+    return SizedBox(
+      height: height,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius:
+              BorderRadius.circular(PartitionUiTokens.actionButtonRadius),
+          onTap: onTap,
+          child: Opacity(
+            opacity: onTap != null ? 1 : 0.48,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(
+                  PartitionUiTokens.actionButtonRadius,
+                ),
+                border: Border.all(color: PartitionUiTokens.actionButtonBorder),
+                color: PartitionUiTokens.actionButtonFill,
+              ),
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   DateTime? _resolveDateFromCalendarOffset({
@@ -651,66 +737,33 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
               ),
             ),
             const SizedBox(height: 20),
-            GestureDetector(
+            _buildSettingsStyleButton(
               onTap: _openChorePicker,
-              child: SizedBox(
-                height: 43,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 0.5,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _selectedChoresSummary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _selectedChores.isEmpty
+                              ? Colors.white.withOpacity(0.68)
+                              : Colors.white,
+                          fontSize: PartitionUiTokens.actionFontSize,
+                          fontWeight: PartitionUiTokens.actionWeight,
+                          fontFamily: 'Pretendard Variable',
                         ),
-                        gradient: const RadialGradient(
-                          center: Alignment(-0.1212, -0.1178),
-                          radius: 1.7145,
-                          colors: [
-                            Color.fromRGBO(255, 255, 255, 0.15),
-                            Color.fromRGBO(255, 255, 255, 0.30),
-                          ],
-                          stops: [0.0, 1.0],
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color.fromRGBO(255, 255, 255, 0.25),
-                            offset: Offset(4, 4),
-                            blurRadius: 30,
-                          ),
-                        ],
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.arrow_drop_down,
-                            color: Colors.white.withOpacity(0.7),
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              _selectedChoresSummary,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: _selectedChores.isEmpty
-                                    ? Colors.white.withOpacity(0.7)
-                                    : Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w400,
-                                fontFamily: 'Pretendard Variable',
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
                     ),
-                  ),
+                    Icon(
+                      Icons.expand_more_rounded,
+                      color: Colors.white.withOpacity(0.7),
+                      size: 20,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -900,59 +953,29 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
               ),
             ),
             const SizedBox(height: 22),
-            SizedBox(
-              height: 45.327,
-              child: GestureDetector(
-                onTap: _isLoading ? null : _handleAutoAssign,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        gradient: const RadialGradient(
-                          center: Alignment(-0.1212, -0.1178),
-                          radius: 1.7145,
-                          colors: [
-                            Color.fromRGBO(255, 255, 255, 0.10),
-                            Color.fromRGBO(255, 255, 255, 0.15),
-                          ],
-                          stops: [0.0, 1.0],
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color.fromRGBO(255, 255, 255, 0.25),
-                            offset: Offset(4, 4),
-                            blurRadius: 30,
+            _buildSettingsStyleButton(
+              onTap: _isLoading ? null : _handleAutoAssign,
+              child: Center(
+                child: _isLoading
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white.withOpacity(0.9),
                           ),
-                        ],
+                        ),
+                      )
+                    : const Text(
+                        '자동 배정',
+                        style: TextStyle(
+                          color: PartitionUiTokens.actionText,
+                          fontSize: PartitionUiTokens.actionFontSize,
+                          fontWeight: PartitionUiTokens.actionWeight,
+                          fontFamily: 'Pretendard Variable',
+                        ),
                       ),
-                      child: Center(
-                        child: _isLoading
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white.withOpacity(0.9),
-                                  ),
-                                ),
-                              )
-                            : const Text(
-                                '자동 배정',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w400,
-                                  fontFamily: 'Pretendard Variable',
-                                ),
-                              ),
-                      ),
-                    ),
-                  ),
-                ),
               ),
             ),
           ],

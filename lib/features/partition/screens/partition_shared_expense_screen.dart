@@ -860,58 +860,7 @@ class _PartitionSharedExpenseScreenState
     });
   }
 
-  /// 공동 구매 정산: 멤버 알림 동의 후 POST → PATCH 완료까지 진행.
-  Future<bool?> _confirmSettlementNotifyDialog() async {
-    return showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: const Color(0xFF2A2A32),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          '정산 알림',
-          style: TextStyle(
-            color: Colors.white,
-            fontFamily: 'Pretendard Variable',
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        content: const Text(
-          '다른 멤버에게 정산 알림을 보낼까요?\n'
-          '「예, 보내기」를 누르면 정산 처리가 진행되며 멤버에게 안내될 수 있어요.',
-          style: TextStyle(
-            color: Colors.white70,
-            height: 1.35,
-            fontFamily: 'Pretendard Variable',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: Text(
-              '아니요',
-              style: TextStyle(color: Colors.white.withOpacity(0.85)),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            child: const Text(
-              '예, 보내기',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Pretendard Variable',
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _executeGoodsSettlementPostAndConfirm({
-    required List<int> purchaseIds,
-  }) async {
+  Future<List<int>> _fetchHouseholdMemberIds() async {
     final members = await _authService.fetchHouseholdMembers();
     final memberIds = members.map((e) => e.userId).toList();
     if (memberIds.isEmpty) {
@@ -919,14 +868,153 @@ class _PartitionSharedExpenseScreenState
         message: '정산에 포함할 멤버를 찾지 못했어요. 로그인·그룹 상태를 확인해 주세요.',
       );
     }
+    return memberIds;
+  }
+
+  /// 공동 구매 정산: 멤버 알림 동의 후 POST → PATCH 완료까지 진행.
+  Future<bool?> _confirmSettlementNotifyDialog() async {
+    return showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (dialogCtx) => _SharedGlassDialogShell(
+        constraints: const BoxConstraints(maxWidth: 340),
+        useSettingsModalStyle: true,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 34,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Text(
+                      '정산 알림',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                    Positioned(
+                      right: -8,
+                      child: IconButton(
+                        onPressed: () => Navigator.of(dialogCtx).pop(false),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white70,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.16),
+                    width: 0.6,
+                  ),
+                  color: Colors.white.withOpacity(0.05),
+                ),
+                child: Text(
+                  '다른 멤버에게 정산 알림을 보낼까요?\n'
+                  '「예, 보내기」를 누르면 정산 요청이 진행되며 멤버에게 안내될 수 있어요.',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.84),
+                    fontSize: 14,
+                    height: 1.45,
+                    fontFamily: 'Pretendard Variable',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildAlarmSettlementActionButton(
+                      label: '아니요',
+                      filled: false,
+                      onTap: () => Navigator.of(dialogCtx).pop(false),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildAlarmSettlementActionButton(
+                      label: '예, 보내기',
+                      filled: true,
+                      onTap: () => Navigator.of(dialogCtx).pop(true),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<int> _requestGoodsSettlement({
+    required List<int> purchaseIds,
+  }) async {
+    final memberIds = await _fetchHouseholdMemberIds();
     final req = await _supplyService.requestSettlement(
       purchaseIds: purchaseIds,
       memberIds: memberIds,
     );
-    await _supplyService.confirmSettlement(req.settlementId);
+    return req.settlementId;
+  }
+
+  Future<void> _executeGoodsSettlementPostAndConfirm({
+    required List<int> purchaseIds,
+  }) async {
+    final settlementId = await _requestGoodsSettlement(purchaseIds: purchaseIds);
+    await _supplyService.confirmSettlement(settlementId);
+    try {
+      final detail = await _supplyService.fetchSettlementDetail(settlementId);
+      if (!detail.isConfirmed && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '정산은 접수되었지만 완료 확인이 되지 않았어요. 잠시 후 목록을 새로고침해 주세요.',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (_) {
+      // POST/PATCH 성공 후 상세 조회만 실패한 경우 무시
+    }
+  }
+
+  Future<int> _requestUtilityBillSettlement({
+    required List<int> billIds,
+  }) async {
+    final memberIds = await _fetchHouseholdMemberIds();
+    final req = await _utilityBillService.requestBillSettlement(
+      billIds: billIds,
+      memberIds: memberIds,
+    );
+    return req.settlementId;
+  }
+
+  Future<void> _executeUtilityBillSettlementPostAndConfirm({
+    required List<int> billIds,
+  }) async {
+    final settlementId = await _requestUtilityBillSettlement(billIds: billIds);
+    await _utilityBillService.confirmBillSettlement(settlementId);
     try {
       final detail =
-          await _supplyService.fetchSettlementDetail(req.settlementId);
+          await _utilityBillService.fetchBillSettlementDetail(settlementId);
       if (!detail.isConfirmed && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -954,69 +1042,144 @@ class _PartitionSharedExpenseScreenState
         ),
         item: item,
         isUtility: _filterIndex == 1,
-        onSettlementChanged: (v) async {
-          final goodsApi = _filterIndex == 0 && _useGoodsPurchasesApi(context);
-          final pid = item.purchaseId;
-          if (goodsApi && pid != null && pid > 0) {
-            if (!v) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      '서버에 반영된 정산은 이 화면에서 되돌릴 수 없어요.',
+        onSettlementRequest: item.manuallySettled
+            ? null
+            : () async {
+                final goodsApi =
+                    _filterIndex == 0 && _useGoodsPurchasesApi(context);
+                final utilityApi =
+                    _filterIndex == 1 && _useGoodsPurchasesApi(context);
+                final pid = item.purchaseId;
+                final bid = item.billId;
+
+                try {
+                  if (goodsApi && pid != null && pid > 0) {
+                    final agreed = await _confirmSettlementNotifyDialog();
+                    if (agreed != true || !mounted) return;
+                    await _requestGoodsSettlement(purchaseIds: [pid]);
+                    if (!mounted) return;
+                    Navigator.of(ctx).pop();
+                    await _loadGoodsPurchases();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('정산 요청을 보냈어요. 그룹원에게 알림이 전달됩니다.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (utilityApi && bid != null && bid > 0) {
+                    final agreed = await _confirmSettlementNotifyDialog();
+                    if (agreed != true || !mounted) return;
+                    await _requestUtilityBillSettlement(billIds: [bid]);
+                    if (!mounted) return;
+                    Navigator.of(ctx).pop();
+                    await _loadUtilityBills();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('정산 요청을 보냈어요. 그룹원에게 알림이 전달됩니다.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('정산 요청은 실제 서버 연동 항목에서만 사용할 수 있어요.'),
+                      behavior: SnackBarBehavior.floating,
                     ),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-              throw Exception('unsettle-not-supported');
-            }
-            final agreed = await _confirmSettlementNotifyDialog();
-            if (agreed != true) {
-              throw Exception('cancel');
-            }
-            try {
-              await _executeGoodsSettlementPostAndConfirm(
-                purchaseIds: [pid],
-              );
-            } on ApiException catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(e.message),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-              rethrow;
-            }
-            if (mounted) {
-              Navigator.of(ctx).pop();
-              _loadGoodsPurchases();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('정산 처리했어요.'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            }
-            return;
-          }
-          if (!mounted) return;
-          setState(() {
-            final list =
-                List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
-            if (globalIndex >= 0 && globalIndex < list.length) {
-              list[globalIndex] =
-                  list[globalIndex].copyWith(manuallySettled: v);
-              if (_filterIndex == 0) {
-                _goodsExpenseItems = list;
-              } else {
-                _utilityExpenseItems = list;
-              }
-            }
-          });
-        },
+                  );
+                } on ApiException catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(e.message),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                }
+              },
+        onSettlementComplete: item.manuallySettled
+            ? null
+            : () async {
+                final goodsApi =
+                    _filterIndex == 0 && _useGoodsPurchasesApi(context);
+                final utilityApi =
+                    _filterIndex == 1 && _useGoodsPurchasesApi(context);
+                final pid = item.purchaseId;
+                final bid = item.billId;
+
+                try {
+                  if (goodsApi && pid != null && pid > 0) {
+                    final agreed = await _confirmSettlementNotifyDialog();
+                    if (agreed != true || !mounted) return;
+                    await _executeGoodsSettlementPostAndConfirm(
+                      purchaseIds: [pid],
+                    );
+                    if (!mounted) return;
+                    Navigator.of(ctx).pop();
+                    await _loadGoodsPurchases();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('정산 완료 처리했어요.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (utilityApi && bid != null && bid > 0) {
+                    final agreed = await _confirmSettlementNotifyDialog();
+                    if (agreed != true || !mounted) return;
+                    await _executeUtilityBillSettlementPostAndConfirm(
+                      billIds: [bid],
+                    );
+                    if (!mounted) return;
+                    Navigator.of(ctx).pop();
+                    await _loadUtilityBills();
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('정산 완료 처리했어요.'),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
+
+                  if (!mounted) return;
+                  setState(() {
+                    final list =
+                        List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
+                    if (globalIndex >= 0 && globalIndex < list.length) {
+                      list[globalIndex] = list[globalIndex].copyWith(
+                        manuallySettled: true,
+                      );
+                      if (_filterIndex == 0) {
+                        _goodsExpenseItems = list;
+                      } else {
+                        _utilityExpenseItems = list;
+                      }
+                    }
+                  });
+                } on ApiException catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(e.message),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+                }
+              },
         onEditRequested: () => _showManualSharedExpenseModal(
           initialEditIndex: globalIndex,
         ),
@@ -1223,8 +1386,8 @@ class _PartitionSharedExpenseScreenState
             decoration: const BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Colors.white,
-                  width: 0.5,
+                  color: Color.fromRGBO(214, 218, 226, 0.8),
+                  width: 0.65,
                 ),
               ),
             ),
@@ -1495,7 +1658,7 @@ class _PartitionSharedExpenseScreenState
               children: [
                 Tooltip(
                   message:
-                      _tableSelectionMode ? '선택 종료' : '여러 항목 선택 후 정산 완료 표시·삭제',
+                      _tableSelectionMode ? '선택 종료' : '여러 항목 선택 후 정산 요청·삭제',
                   child: _buildCircleArrow(
                     _tableSelectionMode
                         ? Icons.close_rounded
@@ -1526,7 +1689,7 @@ class _PartitionSharedExpenseScreenState
                           ),
                           const SizedBox(width: 6),
                           _buildSelectionActionChip(
-                            selectionAllSettled ? '정산 해제' : '정산 완료',
+                            selectionAllSettled ? '정산 해제' : '정산 요청',
                             selectionAllSettled
                                 ? _cancelSettlementSelectedRows
                                 : _settleSelectedRows,
@@ -1901,17 +2064,18 @@ class _PartitionSharedExpenseScreenState
       color: Colors.transparent,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         splashColor: Colors.white.withOpacity(0.12),
         highlightColor: Colors.white.withOpacity(0.06),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              constraints: const BoxConstraints(minHeight: 34),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(18),
                 color: Colors.white.withOpacity(0.08),
                 border: Border.all(
                   color: Colors.white.withOpacity(0.85),
@@ -1924,7 +2088,7 @@ class _PartitionSharedExpenseScreenState
                 softWrap: false,
                 style: const TextStyle(
                   fontFamily: 'Pretendard Variable',
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
                   height: 1.2,
@@ -2144,7 +2308,9 @@ class _PartitionSharedExpenseScreenState
     }
     final count = _selectedRowIndices.length;
     final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
-    final goodsApi = _filterIndex == 0 && _useGoodsPurchasesApi(context);
+    final apiMode = _useGoodsPurchasesApi(context);
+    final goodsApi = _filterIndex == 0 && apiMode;
+    final utilityApi = _filterIndex == 1 && apiMode;
 
     if (goodsApi) {
       final ids = <int>[];
@@ -2165,13 +2331,56 @@ class _PartitionSharedExpenseScreenState
       final agreed = await _confirmSettlementNotifyDialog();
       if (agreed != true || !mounted) return;
       try {
-        await _executeGoodsSettlementPostAndConfirm(purchaseIds: ids);
+        await _requestGoodsSettlement(purchaseIds: ids);
         if (!mounted) return;
         setState(() => _selectedRowIndices.clear());
-        _loadGoodsPurchases();
+        await _loadGoodsPurchases();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('선택한 $count개 항목 정산을 완료했어요.'),
+            content: Text('선택한 $count개 항목에 정산 요청을 보냈어요.'),
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } on ApiException catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+      return;
+    }
+
+    if (utilityApi) {
+      final billIds = <int>[];
+      for (final i in _selectedRowIndices) {
+        if (i < 0 || i >= list.length) continue;
+        final id = list[i].billId;
+        if (id == null || id <= 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('서버에 등록된 공과금만 정산 요청할 수 있어요.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+        billIds.add(id);
+      }
+      final agreed = await _confirmSettlementNotifyDialog();
+      if (agreed != true || !mounted) return;
+      try {
+        await _requestUtilityBillSettlement(billIds: billIds);
+        if (!mounted) return;
+        setState(() => _selectedRowIndices.clear());
+        await _loadUtilityBills();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('선택한 $count개 공과금에 정산 요청을 보냈어요.'),
             duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
           ),
@@ -2204,7 +2413,7 @@ class _PartitionSharedExpenseScreenState
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('선택한 $count개 항목을 정산 완료로 표시했어요.'),
+        content: Text('선택한 $count개 항목을 정산 요청 상태로 표시했어요.'),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -2392,6 +2601,12 @@ class _SharedExpenseTableBody extends StatelessWidget {
     );
   }
 
+  TextStyle _contentStyleFor(SharedExpenseTableItem item) {
+    return _styleFor(item).copyWith(
+      fontWeight: FontWeight.w700,
+    );
+  }
+
   Widget _buildItemRow(
     BuildContext context,
     bool isUtility,
@@ -2399,8 +2614,9 @@ class _SharedExpenseTableBody extends StatelessWidget {
     int globalIndex,
   ) {
     // 내용 열: 카테고리 제외 실제 품목명만 (분류는 상세 시트에서)
-    final label = item.name;
+    final label = item.displayLabel;
     final rowStyle = _styleFor(item);
+    final contentStyle = _contentStyleFor(item);
 
     // 헤더 셀과 동일한 가로 패딩·flex (_buildTableHeader와 맞출 것)
     const padContent = 4.0;
@@ -2493,7 +2709,7 @@ class _SharedExpenseTableBody extends StatelessWidget {
                               maxLines: 1,
                               softWrap: false,
                               textAlign: TextAlign.center,
-                              style: rowStyle,
+                              style: contentStyle,
                             ),
                           )
                         : Text(
@@ -2501,7 +2717,7 @@ class _SharedExpenseTableBody extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             textAlign: TextAlign.center,
-                            style: rowStyle,
+                            style: contentStyle,
                           ),
                   ),
                 ),
@@ -2832,7 +3048,7 @@ class _SharedExpenseSettlementFlowDialog extends StatefulWidget {
 
 class _SharedExpenseSettlementFlowDialogState
     extends State<_SharedExpenseSettlementFlowDialog> {
-  /// 0: 항목 선택, 1: 정산할 인원
+  /// 0: 항목 선택, 1: 정산할 인원, 2: 정산 요청 완료
   int _step = 0;
 
   late DateTime _rangeStart;
@@ -2848,6 +3064,8 @@ class _SharedExpenseSettlementFlowDialogState
   bool _loadingMembers = true;
 
   bool _submittingSettlementRequest = false;
+  SupplySettlementRequestResult? _postedSettlementRequestResult;
+  bool _confirmingSettlement = false;
 
   final AuthService _authService = AuthService();
   final SupplyService _supplyService = SupplyService();
@@ -3548,7 +3766,7 @@ class _SharedExpenseSettlementFlowDialogState
             ],
             const SizedBox(height: 20),
             PrimaryButton(
-              label: _submittingSettlementRequest ? '요청 중...' : '정산하기',
+              label: _submittingSettlementRequest ? '요청 중...' : '정산 요청',
               enabled: !_submittingSettlementRequest && !_loadingMembers,
               onPressed: () async {
                 if (_loadingMembers || _submittingSettlementRequest) return;
@@ -3615,13 +3833,27 @@ class _SharedExpenseSettlementFlowDialogState
                 final messenger = ScaffoldMessenger.of(context);
                 setState(() => _submittingSettlementRequest = true);
                 try {
-                  await _supplyService.requestSettlement(
+                  final result = await _supplyService.requestSettlement(
                     purchaseIds: purchaseIds,
                     memberIds: memberIds,
                   );
                   if (!context.mounted) return;
+                  if (result.settlementId <= 0) {
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          '정산 요청은 되었지만 번호를 확인하지 못했어요. 목록을 새로고침해 주세요.',
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    return;
+                  }
                   widget.onFinished?.call();
-                  Navigator.of(context).pop();
+                  setState(() {
+                    _postedSettlementRequestResult = result;
+                    _step = 2;
+                  });
                   messenger.showSnackBar(
                     const SnackBar(
                       content: Text(
@@ -3652,6 +3884,143 @@ class _SharedExpenseSettlementFlowDialogState
     );
   }
 
+  Widget _buildStepAfterRequest(BuildContext context) {
+    final r = _postedSettlementRequestResult;
+    if (r == null) {
+      return const SizedBox.shrink();
+    }
+    final messenger = ScaffoldMessenger.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(width: 40),
+                const Expanded(
+                  child: Text(
+                    '정산 요청 완료',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '내용을 확인한 뒤 정산 완료 처리를 눌러 주세요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.85),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Pretendard Variable',
+                height: 1.22,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '총액 ${_formatKrwSettlement(r.totalAmount)}원 · 1인 ${_formatKrwSettlement(r.amountPerMember)}원 · '
+              '${r.memberCount}명',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.92),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Pretendard Variable',
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 14),
+            ...r.items.map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: FrostedPanel(
+                  borderRadius: BorderRadius.circular(18),
+                  backgroundOpacity: 0.08,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Text(
+                    '${e.itemName} · ${_formatKrwSettlement(e.amount)}원',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            PrimaryButton(
+              label: _confirmingSettlement ? '처리 중...' : '정산 완료 처리',
+              enabled: !_confirmingSettlement,
+              onPressed: () async {
+                if (_confirmingSettlement) return;
+                setState(() => _confirmingSettlement = true);
+                try {
+                  await _supplyService.confirmSettlement(r.settlementId);
+                  if (!context.mounted) return;
+                  widget.onFinished?.call();
+                  Navigator.of(context).pop();
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('정산을 완료했습니다.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } on ApiException catch (e) {
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(e.message),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } catch (_) {
+                  if (!mounted) return;
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('정산 완료 처리에 실패했습니다.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } finally {
+                  if (mounted) {
+                    setState(() => _confirmingSettlement = false);
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final sw = MediaQuery.sizeOf(context).width;
@@ -3662,8 +4031,11 @@ class _SharedExpenseSettlementFlowDialogState
         maxWidth: sw - 32,
         maxHeight: sh * 0.72,
       ),
-      child:
-          _step == 0 ? _buildStepSelect(context) : _buildStepMembers(context),
+      child: _step == 0
+          ? _buildStepSelect(context)
+          : _step == 1
+              ? _buildStepMembers(context)
+              : _buildStepAfterRequest(context),
     );
   }
 }
@@ -4433,7 +4805,7 @@ class _UtilityBillSettlementFlowDialogState
             ],
             const SizedBox(height: 20),
             PrimaryButton(
-              label: _submittingBillSettlement ? '요청 중...' : '정산하기',
+              label: _submittingBillSettlement ? '요청 중...' : '정산 요청',
               enabled: !_submittingBillSettlement && !_loadingMembers,
               onPressed: () async {
                 if (_loadingMembers || _submittingBillSettlement) return;
@@ -4654,7 +5026,7 @@ class _UtilityBillSettlementFlowDialogState
             ),
             const SizedBox(height: 20),
             PrimaryButton(
-              label: _confirmingBillSettlement ? '처리 중...' : '정산 완료',
+              label: _confirmingBillSettlement ? '처리 중...' : '정산 완료 처리',
               enabled: !_confirmingBillSettlement,
               onPressed: () async {
                 if (_confirmingBillSettlement) return;

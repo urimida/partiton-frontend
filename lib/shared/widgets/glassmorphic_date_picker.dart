@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 
 /// 글래스 스타일 날짜 선택 다이얼로그.
 class GlassmorphicDatePicker extends StatefulWidget {
@@ -140,12 +141,12 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
           maxHeight: maxDialogHeight,
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(PartitionUiTokens.cardRadius),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
             child: Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(PartitionUiTokens.cardRadius),
                 border: Border.all(
                   color: Colors.white,
                   width: 0.5,
@@ -351,53 +352,14 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      GestureDetector(
+                      _buildActionButton(
+                        label: '취소',
                         onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.15),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: const Text(
-                            '취소',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w400,
-                              fontFamily: 'Pretendard Variable',
-                            ),
-                          ),
-                        ),
                       ),
                       const SizedBox(width: 12),
-                      GestureDetector(
+                      _buildActionButton(
+                        label: '확인',
                         onTap: () => Navigator.of(context).pop(_selectedDate),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            color: Colors.white.withOpacity(0.08),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: const Text(
-                            '확인',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              fontFamily: 'Pretendard Variable',
-                            ),
-                          ),
-                        ),
                       ),
                     ],
                   ),
@@ -405,6 +367,47 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                     ),
                   ),
                 ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return SizedBox(
+      width: 100,
+      height: PartitionUiTokens.actionButtonHeight,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius:
+              BorderRadius.circular(PartitionUiTokens.actionButtonRadius),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(
+                PartitionUiTokens.actionButtonRadius,
+              ),
+              color: PartitionUiTokens.actionButtonFill,
+              border: Border.all(
+                color: PartitionUiTokens.actionButtonBorder,
+                width: 0.5,
+              ),
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: PartitionUiTokens.actionText,
+                fontSize: PartitionUiTokens.actionFontSize,
+                fontWeight: PartitionUiTokens.actionWeight,
+                fontFamily: 'Pretendard Variable',
               ),
             ),
           ),

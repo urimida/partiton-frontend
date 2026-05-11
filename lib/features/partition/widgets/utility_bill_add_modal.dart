@@ -5,6 +5,7 @@ import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/features/partition/models/shared_expense_table_item.dart';
 import 'package:partition_app/features/partition/models/utility_bill_model.dart';
 import 'package:partition_app/features/partition/services/utility_bill_service.dart';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 
 /// 공과금 추가하기 — 더미: 항목 다중 선택 + 매월 납부일 / API: 카테고리 조회 + 매달 payDay + POST
@@ -640,52 +641,61 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SizedBox(
-                        height: 46,
-                        child: GestureDetector(
-                          onTap: _submitting ? null : _submit,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(23),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                              child: Container(
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(23),
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Colors.white.withOpacity(0.18),
-                                      Colors.white.withOpacity(0.10),
-                                    ],
-                                  ),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.35),
-                                  ),
+                      _buildSettingsStyleButton(
+                        onTap: _submitting ? null : _submit,
+                        child: _submitting
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white70,
                                 ),
-                                child: _submitting
-                                    ? const SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: Colors.white70,
-                                        ),
-                                      )
-                                    : const Text(
-                                        '추가하기',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                          fontFamily: 'Pretendard Variable',
-                                        ),
-                                      ),
+                              )
+                            : const Text(
+                                '추가하기',
+                                style: TextStyle(
+                                  color: PartitionUiTokens.actionText,
+                                  fontSize: PartitionUiTokens.actionFontSize,
+                                  fontWeight: PartitionUiTokens.actionWeight,
+                                  fontFamily: 'Pretendard Variable',
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
                       ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsStyleButton({
+    required Widget child,
+    required VoidCallback? onTap,
+  }) {
+    return SizedBox(
+      height: PartitionUiTokens.actionButtonHeight,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius:
+              BorderRadius.circular(PartitionUiTokens.actionButtonRadius),
+          onTap: onTap,
+          child: Opacity(
+            opacity: onTap != null ? 1 : 0.48,
+            child: Container(
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(
+                  PartitionUiTokens.actionButtonRadius,
+                ),
+                border: Border.all(
+                  color: PartitionUiTokens.actionButtonBorder,
+                ),
+                color: PartitionUiTokens.actionButtonFill,
+              ),
+              child: child,
+            ),
           ),
         ),
       ),

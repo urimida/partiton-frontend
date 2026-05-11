@@ -11,6 +11,7 @@ import 'package:partition_app/features/auth/providers/auth_provider.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/features/auth/services/kakao_auth_service.dart';
 import 'package:partition_app/features/partition/theme/home_share_style.dart';
+import 'package:partition_app/features/partition/theme/partition_ui_tokens.dart';
 import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 
 /// 홈 탭 「설정」— 그룹 리더 여부·그룹 코드·계정 관련 동작
@@ -28,7 +29,6 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
   bool _loading = true;
 
   static const Color _destructiveMuted = Color(0xFFD88A94);
-
   @override
   void initState() {
     super.initState();
@@ -235,16 +235,19 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
   Widget _dangerButton(BuildContext ctx, String label, VoidCallback onTap) {
     return SizedBox(
       width: double.infinity,
-      height: 44,
+      height: PartitionUiTokens.actionButtonHeight,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius:
+              BorderRadius.circular(PartitionUiTokens.actionButtonRadius),
           onTap: onTap,
           child: Container(
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(
+                PartitionUiTokens.actionButtonRadius,
+              ),
               border: Border.all(color: Colors.white.withOpacity(0.18)),
               color: Colors.white.withOpacity(0.05),
             ),
@@ -252,8 +255,8 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
               label,
               style: const TextStyle(
                 color: _destructiveMuted,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+                fontSize: PartitionUiTokens.actionFontSize,
+                fontWeight: PartitionUiTokens.actionWeight,
                 fontFamily: 'Pretendard Variable',
               ),
             ),
@@ -273,16 +276,19 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius:
+            BorderRadius.circular(PartitionUiTokens.actionButtonRadius),
         onTap: onTap,
         child: Opacity(
           opacity: enabled ? 1 : 0.48,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.14)),
+              color: PartitionUiTokens.surfaceFillMuted,
+              borderRadius: BorderRadius.circular(
+                PartitionUiTokens.actionButtonRadius,
+              ),
+              border: Border.all(color: PartitionUiTokens.surfaceBorderMuted),
             ),
             child: Row(
               children: [
@@ -393,25 +399,28 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
   Widget _mutedButton(BuildContext ctx, String label, VoidCallback onTap) {
     return SizedBox(
       width: double.infinity,
-      height: 46,
+      height: PartitionUiTokens.actionButtonHeight,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius:
+              BorderRadius.circular(PartitionUiTokens.actionButtonRadius),
           onTap: onTap,
           child: Container(
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.24)),
-              color: Colors.white.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(
+                PartitionUiTokens.actionButtonRadius,
+              ),
+              border: Border.all(color: PartitionUiTokens.actionButtonBorder),
+              color: PartitionUiTokens.actionButtonFill,
             ),
             child: Text(
               label,
               style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
+                color: PartitionUiTokens.actionText,
+                fontSize: PartitionUiTokens.actionFontSize,
+                fontWeight: PartitionUiTokens.actionWeight,
                 fontFamily: 'Pretendard Variable',
               ),
             ),
@@ -507,9 +516,13 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
                             color: Colors.transparent,
                             child: InkWell(
                               onTap: () => _onRenameGroup(context),
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(
+                                PartitionUiTokens.fieldRadius,
+                              ),
                               child: ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(
+                                  PartitionUiTokens.fieldRadius,
+                                ),
                                 child: BackdropFilter(
                                   filter: ImageFilter.blur(
                                       sigmaX: 10, sigmaY: 10),
@@ -519,7 +532,9 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
                                       vertical: 7,
                                     ),
                                     decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(10),
+                                      borderRadius: BorderRadius.circular(
+                                        PartitionUiTokens.fieldRadius,
+                                      ),
                                       border: Border.all(
                                         color:
                                             Colors.white.withOpacity(0.28),
@@ -537,8 +552,10 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
                                     child: const Text(
                                       '변경',
                                       style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
+                                        fontSize:
+                                            PartitionUiTokens.actionFontSize,
+                                        fontWeight:
+                                            PartitionUiTokens.actionWeight,
                                         fontFamily: 'Pretendard Variable',
                                         color: HomeShareStyle.point,
                                       ),
@@ -591,8 +608,10 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 14, vertical: 12),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(12),
+                            color: PartitionUiTokens.surfaceFillSoft,
+                            borderRadius: BorderRadius.circular(
+                              PartitionUiTokens.fieldRadius,
+                            ),
                             border: Border.all(
                                 color: Colors.white.withOpacity(0.16)),
                           ),
@@ -739,15 +758,18 @@ class _RenameHouseholdNameDialogState extends State<_RenameHouseholdNameDialog> 
               filled: true,
               fillColor: Colors.white.withOpacity(0.08),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius:
+                    BorderRadius.circular(PartitionUiTokens.fieldRadius),
                 borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius:
+                    BorderRadius.circular(PartitionUiTokens.fieldRadius),
                 borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius:
+                    BorderRadius.circular(PartitionUiTokens.fieldRadius),
                 borderSide: const BorderSide(color: Color(0xFF6BA3FF)),
               ),
               counterStyle: TextStyle(color: Colors.white.withOpacity(0.45)),
