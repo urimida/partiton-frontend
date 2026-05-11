@@ -11,6 +11,7 @@ import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/core/storage/storage_service.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
+import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 import 'package:partition_app/shared/utils/partition_dummy_data_policy.dart';
 
 const _kChoreTaskNames = ['설거지', '빨래', '청소', '분리수거'];
@@ -2042,47 +2043,23 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
     final days = _getDaysInMonth();
     final weekdays = ['일', '월', '화', '수', '목', '금', '토'];
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      alignment: Alignment.center,
+    return PartitionGlassDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          maxWidth: 280,
-          maxHeight: 360,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white,
-                  width: 0.5,
-                ),
-                gradient: const RadialGradient(
-                  center: Alignment(-0.1212, -0.1178),
-                  radius: 1.7145,
-                  colors: [
-                    Color.fromRGBO(255, 255, 255, 0.10),
-                    Color.fromRGBO(255, 255, 255, 0.15),
-                  ],
-                  stops: [0.0, 1.0],
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(255, 255, 255, 0.25),
-                    offset: Offset(4, 4),
-                    blurRadius: 30,
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+      constraints: const BoxConstraints(
+        maxWidth: 280,
+        maxHeight: 360,
+      ),
+      borderRadius: BorderRadius.circular(24),
+      blurSigma: 18,
+      borderColor: Colors.white.withOpacity(0.22),
+      gradient: const LinearGradient(
+        colors: [Colors.transparent, Colors.transparent],
+      ),
+      boxShadow: const [],
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
                   // 헤더
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -2292,11 +2269,7 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-          ),
-        ),
+        ],
       ),
     );
   }

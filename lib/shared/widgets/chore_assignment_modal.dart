@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/features/partition/services/chore_service.dart';
 import 'package:partition_app/features/partition/services/calendar_service.dart';
-import 'package:partition_app/shared/widgets/glassmorphism_widget.dart';
+import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 
 /// 집안일 자동 배정 모달
 class ChoreAssignmentModal extends StatefulWidget {
   final VoidCallback? onSuccess; // 배정 성공 시 호출될 콜백
-  
+
   const ChoreAssignmentModal({
     super.key,
     this.onSuccess,
@@ -19,30 +19,28 @@ class ChoreAssignmentModal extends StatefulWidget {
 }
 
 class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
-  /// 드롭다운 패널이 카드 높이를 넘어가면 터치가 바리어로 새서 창 전체가 닫힘.
-  static const double _kModalCardHeight = 323;
-  /// Stack 좌표: 패딩(24) + 제목 줄 높이(닫기 48) + 부제목·간격 + 집안일 선택 줄(43)
-  static const double _kDropdownTopFromStackTop =
-      24 + 48 + 8 + 13 + 8 + 24 + 43;
-  /// 카드 안에 들어가면서 목록·선택 완료 영역만 살짝 더 컴팩트하게(−10).
-  static const double _kDropdownPanelHeight =
-      _kModalCardHeight - _kDropdownTopFromStackTop - 10;
+  static const double _kModalMinHeight = 460;
+  static const double _kModalMaxHeight = 620;
+  static const int _kCalendarColumns = 7;
+  static const double _kCalendarCellGap = 4;
 
   final Set<String> _selectedChores = {};
-  final Set<String> _tempSelectedChores = {};
-  late DateTime _startDate;
-  late DateTime _endDate;
-  bool _isDropdownOpen = false;
+  final Set<DateTime> _selectedDates = {};
+  late DateTime _visibleMonth;
   final ChoreService _choreService = ChoreService();
   final CalendarService _calendarService = CalendarService();
   bool _isLoading = false;
+  bool _isDraggingDates = false;
+  bool? _dragSelectMode;
+  DateTime? _lastDraggedDate;
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _startDate = DateTime(now.year, now.month, now.day);
-    _endDate = DateTime(now.year, now.month, now.day);
+    final today = DateTime(now.year, now.month, now.day);
+    _visibleMonth = DateTime(today.year, today.month);
+    _selectedDates.add(today);
   }
 
   final List<String> _allChores = [
@@ -57,7 +55,7 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
     '화장실 청소',
     '냉장고 청소',
   ];
-  
+
   /// 집안일 이름을 API enum 값으로 변환
   /// 프론트엔드 한국어 이름 -> 서버 enum 값
   List<String> _convertChoreNamesToEnum(List<String> choreNames) {
@@ -74,7 +72,7 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
       '화장실 청소': 'BATHROOM',
       '냉장고 청소': 'FRIDGE',
     };
-    
+
     return choreNames.map((name) => nameMapping[name] ?? name).toList();
   }
 
@@ -93,7 +91,7 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
       'BATHROOM': '화장실 청소',
       'FRIDGE': '냉장고 청소',
     };
-    
+
     return enumMapping[enumValue] ?? enumValue;
   }
 
@@ -109,24 +107,25 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
       DateTime currentDate = startDate;
       while (!currentDate.isAfter(endDate)) {
         final dateString = _formatDateForApi(currentDate);
-        
+
         // 해당 날짜의 일간 캘린더 조회
-        final response = await _calendarService.getDailyCalendar(date: dateString);
-        
+        final response =
+            await _calendarService.getDailyCalendar(date: dateString);
+
         if (response.isSuccess && response.result != null) {
           // CHORE 카테고리 아이템만 필터링
           final existingChores = response.result!
               .where((item) => item.category.trim().toUpperCase() == 'CHORE')
               .toList();
-          
+
           // 선택된 집안일과 중복 확인
           for (final choreType in choreTypes) {
             final choreName = _convertEnumToChoreName(choreType);
-            
+
             // 이미 배정된 집안일 중에서 같은 이름이 있는지 확인
             for (final existingChore in existingChores) {
               // title에 집안일 이름이 포함되어 있는지 확인 (예: "빨래 하기", "빨래" 등)
-              if (existingChore.title.contains(choreName) || 
+              if (existingChore.title.contains(choreName) ||
                   choreName.contains(existingChore.title.split(' ').first)) {
                 return {
                   'hasDuplicate': true,
@@ -137,11 +136,11 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
             }
           }
         }
-        
+
         // 다음 날짜로 이동
         currentDate = currentDate.add(const Duration(days: 1));
       }
-      
+
       return null; // 중복 없음
     } catch (e) {
       // 에러 발생 시 체크 실패로 간주하고 진행
@@ -154,6 +153,206 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
     return '${date.year.toString().padLeft(4, '0')}-'
         '${date.month.toString().padLeft(2, '0')}-'
         '${date.day.toString().padLeft(2, '0')}';
+  }
+
+  DateTime _dateOnly(DateTime date) =>
+      DateTime(date.year, date.month, date.day);
+
+  bool _isSameDate(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  DateTime get _today {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  DateTime get _lastSelectableDate => _today.add(const Duration(days: 14));
+
+  bool _isDateSelectable(DateTime date) {
+    final normalized = _dateOnly(date);
+    return !normalized.isBefore(_today) &&
+        !normalized.isAfter(_lastSelectableDate);
+  }
+
+  bool _isVisibleMonthDateSelectable(DateTime date) {
+    final normalized = _dateOnly(date);
+    final isVisibleMonth = normalized.year == _visibleMonth.year &&
+        normalized.month == _visibleMonth.month;
+    return isVisibleMonth && _isDateSelectable(normalized);
+  }
+
+  bool _isDateSelected(DateTime date) =>
+      _selectedDates.contains(_dateOnly(date));
+
+  bool _canGoPreviousMonth() {
+    final previousMonth = DateTime(_visibleMonth.year, _visibleMonth.month - 1);
+    final firstMonth = DateTime(_today.year, _today.month);
+    return !previousMonth.isBefore(firstMonth);
+  }
+
+  bool _canGoNextMonth() {
+    final nextMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1);
+    final lastMonth = DateTime(
+      _lastSelectableDate.year,
+      _lastSelectableDate.month,
+    );
+    return !nextMonth.isAfter(lastMonth);
+  }
+
+  void _goToPreviousMonth() {
+    if (!_canGoPreviousMonth()) return;
+    setState(() {
+      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month - 1);
+    });
+  }
+
+  void _goToNextMonth() {
+    if (!_canGoNextMonth()) return;
+    setState(() {
+      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1);
+    });
+  }
+
+  List<DateTime> _getVisibleCalendarDays() {
+    final firstDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
+    final lastDay = DateTime(_visibleMonth.year, _visibleMonth.month + 1, 0);
+    final leadingDays = firstDay.weekday % 7;
+    final totalVisibleDays = leadingDays + lastDay.day;
+    final totalCells = totalVisibleDays <= 35 ? 35 : 42;
+
+    return List<DateTime>.generate(totalCells, (index) {
+      return firstDay.subtract(Duration(days: leadingDays - index));
+    });
+  }
+
+  String _monthYearLabel(DateTime date) => '${date.year}년 ${date.month}월';
+
+  void _toggleSingleDate(DateTime date) {
+    final normalized = _dateOnly(date);
+    if (!_isVisibleMonthDateSelectable(normalized)) return;
+
+    setState(() {
+      if (_selectedDates.contains(normalized)) {
+        _selectedDates.remove(normalized);
+      } else {
+        _selectedDates.add(normalized);
+      }
+    });
+  }
+
+  void _applyDateSelection(DateTime date, bool shouldSelect) {
+    final normalized = _dateOnly(date);
+    if (!_isDateSelectable(normalized)) return;
+
+    if (shouldSelect) {
+      _selectedDates.add(normalized);
+    } else {
+      _selectedDates.remove(normalized);
+    }
+  }
+
+  Iterable<DateTime> _iterateInclusiveDates(
+      DateTime start, DateTime end) sync* {
+    DateTime cursor = _dateOnly(start);
+    final target = _dateOnly(end);
+    final step = cursor.isAfter(target) ? -1 : 1;
+
+    while (true) {
+      yield cursor;
+      if (_isSameDate(cursor, target)) break;
+      cursor = cursor.add(Duration(days: step));
+    }
+  }
+
+  void _handleDragSelectionAt(DateTime date) {
+    final normalized = _dateOnly(date);
+    if (!_isVisibleMonthDateSelectable(normalized)) return;
+
+    setState(() {
+      final shouldSelect =
+          _dragSelectMode ?? !_selectedDates.contains(normalized);
+      if (_lastDraggedDate == null) {
+        _dragSelectMode = shouldSelect;
+        _applyDateSelection(normalized, shouldSelect);
+        _lastDraggedDate = normalized;
+        return;
+      }
+
+      for (final day in _iterateInclusiveDates(_lastDraggedDate!, normalized)) {
+        _applyDateSelection(day, shouldSelect);
+      }
+      _lastDraggedDate = normalized;
+    });
+  }
+
+  void _startDateDrag(DateTime date) {
+    _isDraggingDates = true;
+    _dragSelectMode = !_isDateSelected(date);
+    _lastDraggedDate = null;
+    _handleDragSelectionAt(date);
+  }
+
+  void _updateDateDrag(DateTime date) {
+    if (!_isDraggingDates) return;
+    if (_lastDraggedDate != null && _isSameDate(_lastDraggedDate!, date)) {
+      return;
+    }
+    _handleDragSelectionAt(date);
+  }
+
+  void _endDateDrag() {
+    _isDraggingDates = false;
+    _dragSelectMode = null;
+    _lastDraggedDate = null;
+  }
+
+  List<DateTimeRange> _buildSelectedRanges() {
+    if (_selectedDates.isEmpty) return const [];
+
+    final sortedDates = _selectedDates.toList()..sort((a, b) => a.compareTo(b));
+
+    final ranges = <DateTimeRange>[];
+    DateTime rangeStart = sortedDates.first;
+    DateTime rangeEnd = sortedDates.first;
+
+    for (final date in sortedDates.skip(1)) {
+      final nextExpected = rangeEnd.add(const Duration(days: 1));
+      if (_isSameDate(date, nextExpected)) {
+        rangeEnd = date;
+        continue;
+      }
+
+      ranges.add(DateTimeRange(start: rangeStart, end: rangeEnd));
+      rangeStart = date;
+      rangeEnd = date;
+    }
+
+    ranges.add(DateTimeRange(start: rangeStart, end: rangeEnd));
+    return ranges;
+  }
+
+  String get _selectedChoresSummary {
+    final selected = _allChores.where(_selectedChores.contains).toList();
+    if (selected.isEmpty) return '집안일 선택';
+    return selected.join(', ');
+  }
+
+  Future<void> _openChorePicker() async {
+    final picked = await showDialog<Set<String>>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (ctx) => _ChoreSelectionDialog(
+        allChores: _allChores,
+        initialSelected: _selectedChores,
+      ),
+    );
+    if (!mounted || picked == null) return;
+    setState(() {
+      _selectedChores
+        ..clear()
+        ..addAll(picked);
+    });
   }
 
   Future<void> _handleAutoAssign() async {
@@ -170,178 +369,162 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
       return;
     }
 
+    if (_selectedDates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('배정할 날짜를 선택해주세요.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final start = _formatDateForApi(_startDate);
-      final end = _formatDateForApi(_endDate);
       final selectedChoresList = _selectedChores.toList();
-      
+      final selectedRanges = _buildSelectedRanges();
+
       // 집안일 이름을 API enum 값으로 변환
       final choreTypes = _convertChoreNamesToEnum(selectedChoresList);
-      
-      // 중복 체크
-      final duplicateCheck = await _checkDuplicateChores(
-        choreTypes,
-        _startDate,
-        _endDate,
-      );
-      
-      if (duplicateCheck != null && duplicateCheck['hasDuplicate'] == true) {
-        setState(() {
-          _isLoading = false;
-        });
-        
-        final choreName = duplicateCheck['choreName'] as String;
-        final date = duplicateCheck['date'] as String;
-        
-        // 글래스모피즘 스타일 경고 모달 표시
-        await showDialog(
-          context: context,
-          barrierColor: Colors.black.withOpacity(0.5),
-          builder: (context) => Dialog(
-            backgroundColor: Colors.transparent,
-            alignment: Alignment.center,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Container(
-              width: double.infinity,
+
+      for (final range in selectedRanges) {
+        final duplicateCheck = await _checkDuplicateChores(
+          choreTypes,
+          range.start,
+          range.end,
+        );
+
+        if (duplicateCheck != null && duplicateCheck['hasDuplicate'] == true) {
+          setState(() {
+            _isLoading = false;
+          });
+
+          final choreName = duplicateCheck['choreName'] as String;
+          final date = duplicateCheck['date'] as String;
+
+          await showDialog(
+            context: context,
+            barrierColor: Colors.black.withOpacity(0.5),
+            builder: (context) => PartitionGlassDialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+              borderRadius: BorderRadius.circular(24),
+              blurSigma: 18,
+              borderColor: Colors.white.withOpacity(0.22),
+              gradient: const LinearGradient(
+                colors: [Colors.transparent, Colors.transparent],
+              ),
+              boxShadow: const [],
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white,
-                  width: 0.5,
-                ),
-                gradient: const RadialGradient(
-                  center: Alignment(-0.1212, -0.1178),
-                  radius: 1.6319,
-                  colors: [
-                    Color.fromRGBO(255, 255, 255, 0.10),
-                    Color.fromRGBO(255, 255, 255, 0.15),
-                  ],
-                  stops: [0.0, 1.0],
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.white.withOpacity(0.25),
-                    blurRadius: 20,
-                    spreadRadius: 0,
-                    offset: const Offset(0, 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '집안일 중복 배정',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '$date에 이미\n"$choreName" 집안일이 배정되어 있습니다.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.normal,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 150,
+                      height: 45.327,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 0.5,
+                        ),
+                        gradient: const RadialGradient(
+                          center: Alignment(-0.1212, -0.1178),
+                          radius: 1.6319,
+                          colors: [
+                            Color.fromRGBO(255, 255, 255, 0.10),
+                            Color.fromRGBO(255, 255, 255, 0.15),
+                          ],
+                          stops: [0.0, 1.0],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.white.withOpacity(0.25),
+                            blurRadius: 30,
+                            spreadRadius: 0,
+                            offset: const Offset(4, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: const Center(
+                            child: Text(
+                              '확인',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                fontFamily: 'Pretendard Variable',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        '집안일 중복 배정',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          fontFamily: 'Pretendard Variable',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        '$date에 이미\n"$choreName" 집안일이 배정되어 있습니다.',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.normal,
-                          fontFamily: 'Pretendard Variable',
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          width: 150,
-                          height: 45.327,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 0.5,
-                            ),
-                            gradient: const RadialGradient(
-                              center: Alignment(-0.1212, -0.1178),
-                              radius: 1.6319,
-                              colors: [
-                                Color.fromRGBO(255, 255, 255, 0.10),
-                                Color.fromRGBO(255, 255, 255, 0.15),
-                              ],
-                              stops: [0.0, 1.0],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.white.withOpacity(0.25),
-                                blurRadius: 30,
-                                spreadRadius: 0,
-                                offset: const Offset(4, 4),
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                              child: Center(
-                                child: Text(
-                                  '확인',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                    fontFamily: 'Pretendard Variable',
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ),
-          ),
-        );
-        return;
+          );
+          return;
+        }
       }
-      
-      // 디버깅: 선택된 집안일 확인
+
       debugPrint('═══════════════════════════════════════════════════════');
       debugPrint('🏠 집안일 자동 배정 요청');
-      debugPrint('  - 시작일: $start');
-      debugPrint('  - 종료일: $end');
       debugPrint('  - 선택된 집안일 개수: ${selectedChoresList.length}');
       debugPrint('  - 선택된 집안일 목록 (원본): $selectedChoresList');
       debugPrint('  - 변환된 choreTypes (API 전송용): $choreTypes');
+      debugPrint('  - 선택 날짜 개수: ${_selectedDates.length}');
+      debugPrint(
+        '  - 선택 구간: ${selectedRanges.map((range) => '${_formatDateForApi(range.start)} ~ ${_formatDateForApi(range.end)}').toList()}',
+      );
       debugPrint('  - 전체 집안일 목록: $_allChores');
       debugPrint('═══════════════════════════════════════════════════════');
 
-      await _choreService.autoAssignChores(
-        startDate: start,
-        endDate: end,
-        choreTypes: choreTypes, // enum 값 배열 전달
-      );
+      for (final range in selectedRanges) {
+        await _choreService.autoAssignChores(
+          startDate: _formatDateForApi(range.start),
+          endDate: _formatDateForApi(range.end),
+          choreTypes: choreTypes,
+        );
+      }
 
       if (!mounted) return;
 
       Navigator.of(context).pop();
-      
+
       // 콜백 호출하여 캘린더 갱신
       widget.onSuccess?.call();
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('집안일 자동 배정이 완료되었어요.'),
@@ -369,542 +552,600 @@ class _ChoreAssignmentModalState extends State<ChoreAssignmentModal> {
     }
   }
 
-  void _openDropdown() {
-    setState(() {
-      _isDropdownOpen = true;
-      _tempSelectedChores.clear();
-      _tempSelectedChores.addAll(_selectedChores);
-    });
-  }
-
-  void _closeDropdown() {
-    setState(() {
-      _isDropdownOpen = false;
-    });
-  }
-
-  void _confirmSelection() {
-    setState(() {
-      _selectedChores.clear();
-      _selectedChores.addAll(_tempSelectedChores);
-      _isDropdownOpen = false;
-    });
-  }
-
-  void _toggleTempChore(String chore) {
-    setState(() {
-      if (_tempSelectedChores.contains(chore)) {
-        _tempSelectedChores.remove(chore);
-      } else {
-        _tempSelectedChores.add(chore);
-      }
-    });
-  }
-
-  Future<void> _selectDate(bool isStartDate) async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final maxDate = today.add(const Duration(days: 14)); // 2주 후까지
-
-    // initialDate가 firstDate보다 이전이면 today를 사용
-    final selectedDate = isStartDate ? _startDate : _endDate;
-    final initialDate = selectedDate.isBefore(today) ? today : selectedDate;
-
-    final DateTime? picked = await showDialog<DateTime>(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => _GlassmorphicDatePicker(
-        initialDate: initialDate,
-        firstDate: today,
-        lastDate: maxDate,
-        isStartDate: isStartDate,
-      ),
-    );
-
-    if (picked != null) {
-      setState(() {
-        final selectedDate = DateTime(picked.year, picked.month, picked.day);
-        if (isStartDate) {
-          _startDate = selectedDate;
-          // 시작일이 종료일보다 늦으면 종료일도 같이 변경
-          if (_endDate.isBefore(_startDate)) {
-            _endDate = _startDate;
-          }
-        } else {
-          _endDate = selectedDate;
-          // 종료일이 시작일보다 이전이면 시작일도 같이 변경
-          if (_endDate.isBefore(_startDate)) {
-            _startDate = _endDate;
-          }
-        }
-      });
-    }
-  }
-
   String _formatDate(DateTime date) {
     return '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')}.';
   }
 
+  DateTime? _resolveDateFromCalendarOffset({
+    required Offset localPosition,
+    required Size size,
+    required List<DateTime> days,
+  }) {
+    if (size.width <= 0 || size.height <= 0) return null;
+
+    final rowCount = (days.length / _kCalendarColumns).ceil();
+    final column =
+        (localPosition.dx / (size.width / _kCalendarColumns)).floor();
+    final row = (localPosition.dy / (size.height / rowCount)).floor();
+
+    if (column < 0 ||
+        column >= _kCalendarColumns ||
+        row < 0 ||
+        row >= rowCount) {
+      return null;
+    }
+
+    final index = row * _kCalendarColumns + column;
+    if (index < 0 || index >= days.length) return null;
+    return days[index];
+  }
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        if (_isDropdownOpen) {
-          _closeDropdown();
-        }
-      },
-      child: Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {}, // 내부 클릭은 전파 방지
-          child: Container(
-            width: 350,
-            height: _kModalCardHeight,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Colors.white,
-                width: 0.5,
-              ),
-              gradient: const RadialGradient(
-                center: Alignment(-0.1212, -0.1178),
-                radius: 1.7145,
-                colors: [
-                  Color.fromRGBO(255, 255, 255, 0.10),
-                  Color.fromRGBO(255, 255, 255, 0.15),
-                ],
-                stops: [0.0, 1.0],
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color.fromRGBO(255, 255, 255, 0.25),
-                  offset: Offset(4, 4),
-                  blurRadius: 30,
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final modalHeight =
+        (screenHeight * 0.72).clamp(_kModalMinHeight, _kModalMaxHeight);
+    final days = _getVisibleCalendarDays();
+    final weekdays = const ['일', '월', '화', '수', '목', '금', '토'];
+
+    return PartitionGlassDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+      constraints: BoxConstraints.tightFor(
+        width: 350,
+        height: modalHeight,
+      ),
+      borderRadius: BorderRadius.circular(24),
+      blurSigma: 18,
+      borderColor: Colors.white.withOpacity(0.22),
+      gradient: const LinearGradient(
+        colors: [Colors.transparent, Colors.transparent],
+      ),
+      boxShadow: const [],
+      fillColor: const Color.fromRGBO(255, 255, 255, 0.12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const SizedBox(width: 40),
+                const Expanded(
+                  child: Text(
+                    '집안일 자동 배정',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Pretendard Variable',
+                      height: 1.15,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '닫기',
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
                 ),
               ],
             ),
-            child: Stack(
-              /// 드롭다운이 여기 높이(323)를 넘어가면 터치가 바리어로 새서 전체 창이 닫힘.
-              clipBehavior: Clip.hardEdge,
-              children: [
-                ClipRRect(
+            const SizedBox(height: 8),
+            const Text(
+              '집안일을 고른 뒤 캘린더에서 날짜를 드래그해 선택하세요',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                fontFamily: 'Pretendard Variable',
+                height: 1.2,
+              ),
+            ),
+            const SizedBox(height: 20),
+            GestureDetector(
+              onTap: _openChorePicker,
+              child: SizedBox(
+                height: 43,
+                child: ClipRRect(
                   borderRadius: BorderRadius.circular(20),
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Row(
-                              children: [
-                                const SizedBox(width: 40),
-                                const Expanded(
-                                  child: Text(
-                                    '집안일 자동 배정',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w900,
-                                      fontFamily: 'Pretendard Variable',
-                                      height: 1.15,
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: '닫기',
-                                  onPressed: () => Navigator.of(context).pop(),
-                                  icon: Icon(
-                                    Icons.close_rounded,
-                                    color: Colors.white.withOpacity(0.9),
-                                  ),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 40,
-                                    minHeight: 40,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          const SizedBox(height: 8),
-                          // 부제목
-                          const Text(
-                            '자동 배정할 집안일을 선택하세요',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w400,
-                              fontFamily: 'Pretendard Variable',
-                              height: 1.07692, // line-height: 14px / 13px = 1.07692
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          // 카테고리 선택 칸
-                          GestureDetector(
-                            onTap: () {
-                              if (_isDropdownOpen) {
-                                _closeDropdown();
-                              } else {
-                                _openDropdown();
-                              }
-                            },
-                            child: SizedBox(
-                              width: 259.331,
-                              height: 43,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: BackdropFilter(
-                                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 0.5,
-                                      ),
-                                      gradient: const RadialGradient(
-                                        center: Alignment(-0.1212, -0.1178),
-                                        radius: 1.7145,
-                                        colors: [
-                                          Color.fromRGBO(255, 255, 255, 0.15),
-                                          Color.fromRGBO(255, 255, 255, 0.30),
-                                        ],
-                                        stops: [0.0, 1.0],
-                                      ),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Color.fromRGBO(255, 255, 255, 0.25),
-                                          offset: Offset(4, 4),
-                                          blurRadius: 30,
-                                        ),
-                                      ],
-                                    ),
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          _isDropdownOpen
-                                              ? Icons.arrow_drop_up
-                                              : Icons.arrow_drop_down,
-                                          color: Colors.white.withOpacity(0.7),
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: _selectedChores.isEmpty
-                                              ? Text(
-                                                  '집안일 선택',
-                                                  style: TextStyle(
-                                                    color: Colors.white.withOpacity(0.7),
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w400,
-                                                    fontFamily: 'Pretendard Variable',
-                                                  ),
-                                                )
-                                              : Wrap(
-                                                  spacing: 6,
-                                                  runSpacing: 6,
-                                                  children: _selectedChores.map((chore) {
-                                                    return Container(
-                                                      padding: const EdgeInsets.symmetric(
-                                                        horizontal: 8,
-                                                        vertical: 4,
-                                                      ),
-                                                      decoration: BoxDecoration(
-                                                        borderRadius: BorderRadius.circular(12),
-                                                        color: Colors.white.withOpacity(0.2),
-                                                      ),
-                                                      child: Text(
-                                                        chore,
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 11,
-                                                          fontWeight: FontWeight.w400,
-                                                          fontFamily: 'Pretendard Variable',
-                                                        ),
-                                                      ),
-                                                    );
-                                                  }).toList(),
-                                                ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16), // 집안일 선택과 날짜 사이 간격 축소
-                          // 날짜 범위 선택
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              GestureDetector(
-                                onTap: () => _selectDate(true),
-                                child: GlassmorphismWidget(
-                                  width: 108.217,
-                                  height: 43,
-                                  borderRadius: BorderRadius.circular(20),
-                                  backgroundOpacity: 0.1,
-                                  borderColor: Colors.white.withOpacity(0.5),
-                                  strokeGradient: const RadialGradient(
-                                    center: Alignment(-0.1212, -0.1178),
-                                    radius: 1.7145,
-                                    colors: [
-                                      Color.fromRGBO(255, 255, 255, 0.10),
-                                      Color.fromRGBO(255, 255, 255, 0.15),
-                                    ],
-                                    stops: [0.0, 1.0],
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      _formatDate(_startDate),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w400,
-                                        fontFamily: 'Pretendard Variable',
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                '~',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              GestureDetector(
-                                onTap: () => _selectDate(false),
-                                child: GlassmorphismWidget(
-                                  width: 108.217,
-                                  height: 43,
-                                  borderRadius: BorderRadius.circular(20),
-                                  backgroundOpacity: 0.1,
-                                  borderColor: Colors.white.withOpacity(0.5),
-                                  strokeGradient: const RadialGradient(
-                                    center: Alignment(-0.1212, -0.1178),
-                                    radius: 1.7145,
-                                    colors: [
-                                      Color.fromRGBO(255, 255, 255, 0.10),
-                                      Color.fromRGBO(255, 255, 255, 0.15),
-                                    ],
-                                    stops: [0.0, 1.0],
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      _formatDate(_endDate),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w400,
-                                        fontFamily: 'Pretendard Variable',
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          // 자동 배정 버튼
-                          SizedBox(
-                            width: 266,
-                            height: 45.327,
-                            child: GestureDetector(
-                              onTap: _isLoading ? null : _handleAutoAssign,
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: BackdropFilter(
-                                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(20),
-                                      gradient: const RadialGradient(
-                                        center: Alignment(-0.1212, -0.1178),
-                                        radius: 1.7145,
-                                        colors: [
-                                          Color.fromRGBO(255, 255, 255, 0.10),
-                                          Color.fromRGBO(255, 255, 255, 0.15),
-                                        ],
-                                        stops: [0.0, 1.0],
-                                      ),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Color.fromRGBO(255, 255, 255, 0.25),
-                                          offset: Offset(4, 4),
-                                          blurRadius: 30,
-                                        ),
-                                      ],
-                                    ),
-                                    child: const Center(
-                                      child: Text(
-                                        '자동 배정',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w400,
-                                          fontFamily: 'Pretendard Variable',
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          ],
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 0.5,
                         ),
+                        gradient: const RadialGradient(
+                          center: Alignment(-0.1212, -0.1178),
+                          radius: 1.7145,
+                          colors: [
+                            Color.fromRGBO(255, 255, 255, 0.15),
+                            Color.fromRGBO(255, 255, 255, 0.30),
+                          ],
+                          stops: [0.0, 1.0],
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color.fromRGBO(255, 255, 255, 0.25),
+                            offset: Offset(4, 4),
+                            blurRadius: 30,
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.arrow_drop_down,
+                            color: Colors.white.withOpacity(0.7),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _selectedChoresSummary,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _selectedChores.isEmpty
+                                    ? Colors.white.withOpacity(0.7)
+                                    : Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                fontFamily: 'Pretendard Variable',
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-                // 드롭다운 메뉴 - 최상위 레이어
-                if (_isDropdownOpen)
-                  Positioned(
-                    top: _kDropdownTopFromStackTop,
-                    left: 24 + (350 - 259.331 - 48) / 2, // 모달 패딩 + 중앙 정렬
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () {}, // 드롭다운 내부 클릭은 전파 방지
-                      child: SizedBox(
-                        width: 259.331,
-                        height: _kDropdownPanelHeight,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 0.5,
-                                ),
-                                gradient: const RadialGradient(
-                                  center: Alignment(-0.1212, -0.1178),
-                                  radius: 1.7145,
-                                  colors: [
-                                    Color.fromRGBO(255, 255, 255, 0.15),
-                                    Color.fromRGBO(255, 255, 255, 0.30),
-                                  ],
-                                  stops: [0.0, 1.0],
-                                ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color.fromRGBO(255, 255, 255, 0.25),
-                                    offset: Offset(4, 4),
-                                    blurRadius: 30,
-                                  ),
-                                ],
-                              ),
-                              child: Column(
-                                children: [
-                                  Expanded(
-                                    child: SingleChildScrollView(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Column(
-                                        children: _allChores.map((chore) {
-                                          final isSelected =
-                                              _tempSelectedChores.contains(chore);
-                                          return GestureDetector(
-                                            behavior: HitTestBehavior.opaque,
-                                            onTap: () => _toggleTempChore(chore),
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                vertical: 8,
-                                                horizontal: 12,
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  Container(
-                                                    width: 18,
-                                                    height: 18,
-                                                    decoration: BoxDecoration(
-                                                      borderRadius:
-                                                          BorderRadius.circular(4),
-                                                      border: Border.all(
-                                                        color: Colors.white,
-                                                        width: 1.5,
-                                                      ),
-                                                      color: isSelected
-                                                          ? Colors.white
-                                                          : Colors.transparent,
-                                                    ),
-                                                    child: isSelected
-                                                        ? const Icon(
-                                                            Icons.check,
-                                                            size: 14,
-                                                            color: Colors.black,
-                                                          )
-                                                        : null,
-                                                  ),
-                                                  const SizedBox(width: 12),
-                                                  Expanded(
-                                                    child: Text(
-                                                      chore,
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 12,
-                                                        fontWeight: FontWeight.w400,
-                                                        fontFamily:
-                                                            'Pretendard Variable',
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ),
-                                  ),
-                                  Divider(
-                                    color: Colors.white.withOpacity(0.3),
-                                    height: 1,
-                                  ),
-                                  GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: _confirmSelection,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
-                                      child: const Center(
-                                        child: Text(
-                                          '선택 완료',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            fontFamily: 'Pretendard Variable',
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Opacity(
+                  opacity: _canGoPreviousMonth() ? 1 : 0.3,
+                  child: GestureDetector(
+                    onTap: _canGoPreviousMonth() ? _goToPreviousMonth : null,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.16),
+                          width: 0.5,
                         ),
+                      ),
+                      child: Icon(
+                        Icons.chevron_left,
+                        color: Colors.white.withOpacity(0.95),
+                        size: 20,
                       ),
                     ),
                   ),
+                ),
+                Text(
+                  _monthYearLabel(_visibleMonth),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: 'Pretendard Variable',
+                  ),
+                ),
+                Opacity(
+                  opacity: _canGoNextMonth() ? 1 : 0.3,
+                  child: GestureDetector(
+                    onTap: _canGoNextMonth() ? _goToNextMonth : null,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.16),
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.chevron_right,
+                        color: Colors.white.withOpacity(0.95),
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: weekdays.map((day) {
+                return Expanded(
+                  child: Center(
+                    child: Text(
+                      day,
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.78),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final gridSize = Size(
+                    constraints.maxWidth,
+                    constraints.maxHeight,
+                  );
+
+                  return GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onPanStart: (details) {
+                      final date = _resolveDateFromCalendarOffset(
+                        localPosition: details.localPosition,
+                        size: gridSize,
+                        days: days,
+                      );
+                      if (date != null) {
+                        _startDateDrag(date);
+                      }
+                    },
+                    onPanUpdate: (details) {
+                      final date = _resolveDateFromCalendarOffset(
+                        localPosition: details.localPosition,
+                        size: gridSize,
+                        days: days,
+                      );
+                      if (date != null) {
+                        _updateDateDrag(date);
+                      }
+                    },
+                    onPanEnd: (_) => _endDateDrag(),
+                    onPanCancel: _endDateDrag,
+                    child: GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: _kCalendarColumns,
+                        mainAxisSpacing: _kCalendarCellGap,
+                        crossAxisSpacing: _kCalendarCellGap,
+                        childAspectRatio: constraints.maxWidth /
+                            _kCalendarColumns /
+                            ((constraints.maxHeight -
+                                    (_kCalendarCellGap *
+                                        ((days.length / _kCalendarColumns)
+                                                .ceil() -
+                                            1))) /
+                                ((days.length / _kCalendarColumns).ceil())),
+                      ),
+                      itemCount: days.length,
+                      itemBuilder: (context, index) {
+                        final date = days[index];
+                        final isCurrentMonth =
+                            date.year == _visibleMonth.year &&
+                                date.month == _visibleMonth.month;
+                        final isSelectable =
+                            _isVisibleMonthDateSelectable(date);
+                        final isSelected = _isDateSelected(date);
+                        final isToday = _isSameDate(date, _today);
+
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _toggleSingleDate(date),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 120),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(10),
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.transparent,
+                              border: Border.all(
+                                color: isSelected
+                                    ? Colors.white
+                                    : isToday
+                                        ? Colors.white.withOpacity(0.42)
+                                        : isSelectable
+                                            ? Colors.white.withOpacity(0.08)
+                                            : Colors.transparent,
+                                width: isSelected ? 1 : 0.6,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${date.day}',
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.black
+                                      : isSelectable
+                                          ? Colors.white
+                                          : Colors.white.withOpacity(
+                                              isCurrentMonth ? 0.3 : 0.18,
+                                            ),
+                                  fontSize: 14,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  fontFamily: 'Pretendard Variable',
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              height: 45.327,
+              child: GestureDetector(
+                onTap: _isLoading ? null : _handleAutoAssign,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        gradient: const RadialGradient(
+                          center: Alignment(-0.1212, -0.1178),
+                          radius: 1.7145,
+                          colors: [
+                            Color.fromRGBO(255, 255, 255, 0.10),
+                            Color.fromRGBO(255, 255, 255, 0.15),
+                          ],
+                          stops: [0.0, 1.0],
+                        ),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color.fromRGBO(255, 255, 255, 0.25),
+                            offset: Offset(4, 4),
+                            blurRadius: 30,
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: _isLoading
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white.withOpacity(0.9),
+                                  ),
+                                ),
+                              )
+                            : const Text(
+                                '자동 배정',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w400,
+                                  fontFamily: 'Pretendard Variable',
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChoreSelectionDialog extends StatefulWidget {
+  const _ChoreSelectionDialog({
+    required this.allChores,
+    required this.initialSelected,
+  });
+
+  final List<String> allChores;
+  final Set<String> initialSelected;
+
+  @override
+  State<_ChoreSelectionDialog> createState() => _ChoreSelectionDialogState();
+}
+
+class _ChoreSelectionDialogState extends State<_ChoreSelectionDialog> {
+  late final Set<String> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = Set<String>.from(widget.initialSelected);
+  }
+
+  void _toggle(String chore) {
+    setState(() {
+      if (_selected.contains(chore)) {
+        _selected.remove(chore);
+      } else {
+        _selected.add(chore);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final dialogW = (size.width - 48).clamp(280.0, 340.0);
+    final dialogH = (size.height * 0.58).clamp(320.0, 500.0);
+
+    return PartitionGlassDialog(
+      constraints: BoxConstraints.tightFor(
+        width: dialogW,
+        height: dialogH,
+      ),
+      borderRadius: BorderRadius.circular(24),
+      blurSigma: 18,
+      borderColor: Colors.white.withOpacity(0.22),
+      gradient: const LinearGradient(
+        colors: [Colors.transparent, Colors.transparent],
+      ),
+      boxShadow: const [],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 4, 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '집안일 선택',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Pretendard Variable',
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Colors.white70,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
+                ),
               ],
             ),
           ),
-        ),
+          Divider(
+            height: 1,
+            thickness: 0.5,
+            color: Colors.white.withOpacity(0.22),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.only(bottom: 12),
+              physics: const BouncingScrollPhysics(),
+              itemCount: widget.allChores.length,
+              separatorBuilder: (_, __) => Divider(
+                height: 1,
+                thickness: 0.5,
+                color: Colors.white.withOpacity(0.08),
+              ),
+              itemBuilder: (context, index) {
+                final chore = widget.allChores[index];
+                final selected = _selected.contains(chore);
+                return Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _toggle(chore),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.5,
+                              ),
+                              color:
+                                  selected ? Colors.white : Colors.transparent,
+                            ),
+                            child: selected
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 14,
+                                    color: Colors.black,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              chore,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                fontFamily: 'Pretendard Variable',
+                                fontSize: 15,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Divider(
+            height: 1,
+            thickness: 0.5,
+            color: Colors.white.withOpacity(0.22),
+          ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => Navigator.pop(context, Set<String>.from(_selected)),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Center(
+                  child: Text(
+                    '선택 완료',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -925,7 +1166,8 @@ class _GlassmorphicDatePicker extends StatefulWidget {
   });
 
   @override
-  State<_GlassmorphicDatePicker> createState() => _GlassmorphicDatePickerState();
+  State<_GlassmorphicDatePicker> createState() =>
+      _GlassmorphicDatePickerState();
 }
 
 class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
@@ -973,8 +1215,10 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
 
   bool _isDateSelectable(DateTime date) {
     final dateOnly = DateTime(date.year, date.month, date.day);
-    final firstDateOnly = DateTime(widget.firstDate.year, widget.firstDate.month, widget.firstDate.day);
-    final lastDateOnly = DateTime(widget.lastDate.year, widget.lastDate.month, widget.lastDate.day);
+    final firstDateOnly = DateTime(
+        widget.firstDate.year, widget.firstDate.month, widget.firstDate.day);
+    final lastDateOnly = DateTime(
+        widget.lastDate.year, widget.lastDate.month, widget.lastDate.day);
     return !dateOnly.isBefore(firstDateOnly) && !dateOnly.isAfter(lastDateOnly);
   }
 
@@ -994,8 +1238,18 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
 
   String _getMonthYearText() {
     final months = [
-      '1월', '2월', '3월', '4월', '5월', '6월',
-      '7월', '8월', '9월', '10월', '11월', '12월'
+      '1월',
+      '2월',
+      '3월',
+      '4월',
+      '5월',
+      '6월',
+      '7월',
+      '8월',
+      '9월',
+      '10월',
+      '11월',
+      '12월'
     ];
     return '${_currentMonth.year}년 ${months[_currentMonth.month - 1]}';
   }
@@ -1006,7 +1260,7 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
     final firstWeekday = firstDay.weekday % 7; // 0 = 일요일, 6 = 토요일
 
     final days = <DateTime>[];
-    
+
     // 이전 달의 마지막 날들
     for (int i = firstWeekday - 1; i >= 0; i--) {
       days.add(firstDay.subtract(Duration(days: i + 1)));
@@ -1033,262 +1287,235 @@ class _GlassmorphicDatePickerState extends State<_GlassmorphicDatePicker> {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      alignment: Alignment.center,
+    return PartitionGlassDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: screenWidth - 32,
-          maxHeight: screenHeight * 0.45, // 공용 소비 물품 관리 컴포넌트와 동일한 높이
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: Colors.white,
-                  width: 0.5,
-                ),
-                gradient: const RadialGradient(
-                  center: Alignment(-0.1212, -0.1178),
-                  radius: 1.7145,
-                  colors: [
-                    Color.fromRGBO(255, 255, 255, 0.10),
-                    Color.fromRGBO(255, 255, 255, 0.15),
-                  ],
-                  stops: [0.0, 1.0],
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(255, 255, 255, 0.25),
-                    offset: Offset(4, 4),
-                    blurRadius: 30,
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 헤더
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Opacity(
-                        opacity: _canGoPrevious() ? 1 : 0.3,
-                        child: GestureDetector(
-                          onTap: _canGoPrevious() ? _previousMonth : null,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.15),
-                                width: 0.5,
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.chevron_left,
-                              color: Colors.white.withOpacity(0.95),
-                              size: 20,
-                            ),
-                          ),
-                        ),
+      constraints: BoxConstraints(
+        maxWidth: screenWidth - 32,
+        maxHeight: screenHeight * 0.45,
+      ),
+      borderRadius: BorderRadius.circular(24),
+      blurSigma: 18,
+      borderColor: Colors.white.withOpacity(0.22),
+      gradient: const LinearGradient(
+        colors: [Colors.transparent, Colors.transparent],
+      ),
+      boxShadow: const [],
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 헤더
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Opacity(
+                opacity: _canGoPrevious() ? 1 : 0.3,
+                child: GestureDetector(
+                  onTap: _canGoPrevious() ? _previousMonth : null,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.15),
+                        width: 0.5,
                       ),
-                      Text(
-                        _getMonthYearText(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          fontFamily: 'Pretendard Variable',
-                        ),
-                      ),
-                      Opacity(
-                        opacity: _canGoNext() ? 1 : 0.3,
-                        child: GestureDetector(
-                          onTap: _canGoNext() ? _nextMonth : null,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.15),
-                                width: 0.5,
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.chevron_right,
-                              color: Colors.white.withOpacity(0.95),
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  // 요일 헤더
-                  Row(
-                    children: weekdays.map((day) {
-                      return Expanded(
-                        child: Center(
-                          child: Text(
-                            day,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              fontFamily: 'Pretendard Variable',
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 16),
-                  // 날짜 그리드
-                  Expanded(
-                    child: GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 7,
-                        childAspectRatio: 1.2,
-                        mainAxisSpacing: 4,
-                        crossAxisSpacing: 4,
-                      ),
-                  itemCount: 35,
-                itemBuilder: (context, index) {
-                  final date = days[index];
-                  final isCurrentMonth = date.month == _currentMonth.month;
-                  final isSelectable = _isDateSelectable(date);
-                  final isSelected = _isDateSelected(date);
-                  final isToday = date.year == DateTime.now().year &&
-                      date.month == DateTime.now().month &&
-                      date.day == DateTime.now().day;
-
-                  return GestureDetector(
-                    onTap: () => _selectDate(date),
-                    child: Container(
-                      margin: const EdgeInsets.all(2),
-                      child: isSelected
-                          ? Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                color: Colors.white.withOpacity(0.15),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.3),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '${date.day}',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    fontFamily: 'Pretendard Variable',
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                border: isToday
-                                    ? Border.all(
-                                        color: Colors.white.withOpacity(0.3),
-                                        width: 1,
-                                      )
-                                    : null,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  '${date.day}',
-                                  style: TextStyle(
-                                    color: isCurrentMonth && isSelectable
-                                        ? Colors.white
-                                        : Colors.white.withOpacity(0.4),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w400,
-                                    fontFamily: 'Pretendard Variable',
-                                  ),
-                                ),
-                              ),
-                            ),
                     ),
-                  );
-                },
+                    child: Icon(
+                      Icons.chevron_left,
+                      color: Colors.white.withOpacity(0.95),
+                      size: 20,
+                    ),
+                  ),
                 ),
               ),
-                  const SizedBox(height: 16),
-                  // 버튼
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.15),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: const Text(
-                            '취소',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w400,
-                              fontFamily: 'Pretendard Variable',
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: () => Navigator.of(context).pop(_selectedDate),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(8),
-                            color: Colors.white.withOpacity(0.08),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                              width: 0.5,
-                            ),
-                          ),
-                          child: const Text(
-                            '확인',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              fontFamily: 'Pretendard Variable',
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-            ],
+              Text(
+                _getMonthYearText(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  fontFamily: 'Pretendard Variable',
+                ),
               ),
+              Opacity(
+                opacity: _canGoNext() ? 1 : 0.3,
+                child: GestureDetector(
+                  onTap: _canGoNext() ? _nextMonth : null,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.15),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Icon(
+                      Icons.chevron_right,
+                      color: Colors.white.withOpacity(0.95),
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          // 요일 헤더
+          Row(
+            children: weekdays.map((day) {
+              return Expanded(
+                child: Center(
+                  child: Text(
+                    day,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          // 날짜 그리드
+          Expanded(
+            child: GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 7,
+                childAspectRatio: 1.2,
+                mainAxisSpacing: 4,
+                crossAxisSpacing: 4,
+              ),
+              itemCount: 35,
+              itemBuilder: (context, index) {
+                final date = days[index];
+                final isCurrentMonth = date.month == _currentMonth.month;
+                final isSelectable = _isDateSelectable(date);
+                final isSelected = _isDateSelected(date);
+                final isToday = date.year == DateTime.now().year &&
+                    date.month == DateTime.now().month &&
+                    date.day == DateTime.now().day;
+
+                return GestureDetector(
+                  onTap: () => _selectDate(date),
+                  child: Container(
+                    margin: const EdgeInsets.all(2),
+                    child: isSelected
+                        ? Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              color: Colors.white.withOpacity(0.15),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${date.day}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: 'Pretendard Variable',
+                                ),
+                              ),
+                            ),
+                          )
+                        : Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: isToday
+                                  ? Border.all(
+                                      color: Colors.white.withOpacity(0.3),
+                                      width: 1,
+                                    )
+                                  : null,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${date.day}',
+                                style: TextStyle(
+                                  color: isCurrentMonth && isSelectable
+                                      ? Colors.white
+                                      : Colors.white.withOpacity(0.4),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w400,
+                                  fontFamily: 'Pretendard Variable',
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                );
+              },
             ),
           ),
-        ),
+          const SizedBox(height: 16),
+          // 버튼
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.15),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: const Text(
+                    '취소',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(_selectedDate),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.white.withOpacity(0.08),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.2),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: const Text(
+                    '확인',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 }
-

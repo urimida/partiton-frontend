@@ -168,63 +168,80 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                 ],
               ),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+              child: DefaultTextStyle.merge(
+                textAlign: TextAlign.center,
+                child: SingleChildScrollView(
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
                   // 헤더
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Opacity(
-                        opacity: _canGoPrevious() ? 1 : 0.3,
-                        child: GestureDetector(
-                          onTap: _canGoPrevious() ? _previousMonth : null,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.15),
-                                width: 0.5,
+                      SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Opacity(
+                          opacity: _canGoPrevious() ? 1 : 0.3,
+                          child: GestureDetector(
+                            onTap: _canGoPrevious() ? _previousMonth : null,
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.15),
+                                  width: 0.5,
+                                ),
                               ),
-                            ),
-                            child: Icon(
-                              Icons.chevron_left,
-                              color: Colors.white.withOpacity(0.95),
-                              size: 20,
+                              child: Icon(
+                                Icons.chevron_left,
+                                color: Colors.white.withOpacity(0.95),
+                                size: 20,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                      Text(
-                        _getMonthYearText(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          fontFamily: 'Pretendard Variable',
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            _getMonthYearText(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              fontFamily: 'Pretendard Variable',
+                            ),
+                          ),
                         ),
                       ),
-                      Opacity(
-                        opacity: _canGoNext() ? 1 : 0.3,
-                        child: GestureDetector(
-                          onTap: _canGoNext() ? _nextMonth : null,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.15),
-                                width: 0.5,
+                      SizedBox(
+                        width: 32,
+                        height: 32,
+                        child: Opacity(
+                          opacity: _canGoNext() ? 1 : 0.3,
+                          child: GestureDetector(
+                            onTap: _canGoNext() ? _nextMonth : null,
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.15),
+                                  width: 0.5,
+                                ),
                               ),
-                            ),
-                            child: Icon(
-                              Icons.chevron_right,
-                              color: Colors.white.withOpacity(0.95),
-                              size: 20,
+                              child: Icon(
+                                Icons.chevron_right,
+                                color: Colors.white.withOpacity(0.95),
+                                size: 20,
+                              ),
                             ),
                           ),
                         ),
@@ -239,6 +256,7 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                         child: Center(
                           child: Text(
                             day,
+                            textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 14,
@@ -289,6 +307,7 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                                     child: Center(
                                       child: Text(
                                         '${date.day}',
+                                        textAlign: TextAlign.center,
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 14,
@@ -311,6 +330,7 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                                     child: Center(
                                       child: Text(
                                         '${date.day}',
+                                        textAlign: TextAlign.center,
                                         style: TextStyle(
                                           color: isCurrentMonth && isSelectable
                                               ? Colors.white
@@ -329,7 +349,7 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                   const SizedBox(height: 16),
                   // 버튼
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       GestureDetector(
                         onTap: () => Navigator.of(context).pop(),
@@ -344,6 +364,7 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                           ),
                           child: const Text(
                             '취소',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 14,
@@ -368,6 +389,7 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                           ),
                           child: const Text(
                             '확인',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 14,
@@ -379,7 +401,9 @@ class _GlassmorphicDatePickerState extends State<GlassmorphicDatePicker> {
                       ),
                     ],
                   ),
-                ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),

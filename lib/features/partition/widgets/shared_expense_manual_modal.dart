@@ -10,6 +10,7 @@ import 'package:partition_app/features/partition/services/utility_bill_service.d
 import 'package:partition_app/features/partition/utils/supply_purchase_input.dart';
 import 'package:partition_app/shared/widgets/glassmorphic_date_picker.dart';
 import 'package:partition_app/shared/widgets/glassmorphism_widget.dart';
+import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 
 /// 공용 소비·공과금 내역 관리 모달 (홈 집안일 자동 배정 모달과 동일 글래스 톤)
 class SharedExpenseManualModal extends StatefulWidget {
@@ -913,43 +914,25 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
-      child: Dialog(
-        backgroundColor: Colors.transparent,
+      child: PartitionGlassDialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+        constraints: BoxConstraints.tightFor(
+          width: dialogW,
+          height: maxDialogH,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        blurSigma: 18,
+        borderColor: Colors.white.withOpacity(0.22),
+        gradient: const LinearGradient(
+          colors: [Colors.transparent, Colors.transparent],
+        ),
+        boxShadow: const [],
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: GestureDetector(
           onTap: () {},
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color.fromRGBO(255, 255, 255, 0.25),
-                  offset: Offset(4, 4),
-                  blurRadius: 30,
-                ),
-              ],
-            ),
-            child: GlassmorphismWidget(
-              width: dialogW,
-              height: maxDialogH,
-              borderRadius: BorderRadius.circular(20),
-              backgroundOpacity: 0.12,
-              borderColor: Colors.white.withOpacity(0.5),
-              strokeGradient: const RadialGradient(
-                center: Alignment(-0.1212, -0.1178),
-                radius: 1.7145,
-                colors: [
-                  Color.fromRGBO(255, 255, 255, 0.10),
-                  Color.fromRGBO(255, 255, 255, 0.15),
-                ],
-                stops: [0.0, 1.0],
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: _showsAddOnlyForm
-                  ? _buildForm()
-                  : (_isForm ? _buildForm() : _buildList()),
-            ),
-          ),
+          child: _showsAddOnlyForm
+              ? _buildForm()
+              : (_isForm ? _buildForm() : _buildList()),
         ),
       ),
     );
@@ -1134,7 +1117,7 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
                       ? '공용 소비 표에 반영하기 위해 새로운 내역을 입력하세요.'
                       : '저장하면 목록에 반영되어 함께 관리할 수 있어요.')
               : (_editIndex == null
-                  ? '새로운 물품을 구매하셨나요?\n공용물품으로 등록해주세요.'
+                  ? '등록하고 싶은 물품의 정보를 입력해주세요.'
                   : '저장하면 목록에 반영되어 함께 관리돼요'),
           textAlign: TextAlign.center,
           style: _subtitleStyle,
@@ -1329,42 +1312,14 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.52),
       builder: (ctx) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                width: dialogW,
-                height: dialogH,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.55),
-                    width: 0.5,
-                  ),
-                  gradient: const RadialGradient(
-                    center: Alignment(-0.1212, -0.1178),
-                    radius: 1.7145,
-                    colors: [
-                      Color.fromRGBO(255, 255, 255, 0.10),
-                      Color.fromRGBO(255, 255, 255, 0.16),
-                    ],
-                    stops: [0.0, 1.0],
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color.fromRGBO(255, 255, 255, 0.2),
-                      offset: Offset(4, 4),
-                      blurRadius: 24,
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
+        return PartitionGlassDialog(
+          constraints: BoxConstraints.tightFor(
+            width: dialogW,
+            height: dialogH,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 4, 8),
                       child: Row(
@@ -1456,10 +1411,7 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
                         },
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
+            ],
           ),
         );
       },

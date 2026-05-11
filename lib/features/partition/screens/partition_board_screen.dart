@@ -9,6 +9,7 @@ import 'package:partition_app/features/partition/services/reservation_items_serv
 import 'package:partition_app/features/partition/services/reservations_service.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
 import 'package:partition_app/shared/widgets/glassmorphic_date_picker.dart';
+import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
 import 'package:partition_app/shared/utils/partition_dummy_data_policy.dart';
 import 'package:partition_app/core/network/api_exception.dart';
@@ -91,8 +92,6 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
   static const double _spacingLarge = 20.0;
   static const double _borderRadiusLarge = 32.0;
   static const double _borderRadiusSmall = 24.0;
-  static const double _borderOpacity = 0.25;
-  static const double _blurSigma = 10.0;
   static const int _itemsPerPage = 5;
   static const double _tablePageViewHeight = 132.0;
 
@@ -417,23 +416,22 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
 
   Widget _buildHeader() {
     final topInset = MediaQuery.paddingOf(context).top;
-    return Container(
+    return SizedBox(
       width: double.infinity,
       height: topInset + _headerHeight,
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.white.withOpacity(_borderOpacity),
-            width: 1,
-          ),
-        ),
-      ),
-      child: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: _blurSigma, sigmaY: _blurSigma),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: double.infinity,
+            height: topInset + _headerHeight,
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: Colors.white,
+                  width: 0.5,
+                ),
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.max,
@@ -452,20 +450,13 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
                           '게시판',
                           textAlign: TextAlign.center,
                           maxLines: 1,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Colors.white,
                             fontFamily: 'Pretendard Variable',
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
                             height: 1.1,
                             letterSpacing: -0.2,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black.withOpacity(0.35),
-                                offset: const Offset(0, 0.5),
-                                blurRadius: 2,
-                              ),
-                            ],
                           ),
                         ),
                       ),
@@ -475,7 +466,27 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
               ],
             ),
           ),
-        ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: -1,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.28),
+                      blurRadius: 10,
+                      spreadRadius: 0,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: const SizedBox(height: 1),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -638,13 +649,14 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(label, style: labelStyle),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
+              alignment: Alignment.center,
               child: Text(
                 date,
+                textAlign: TextAlign.center,
                 style: dateStyle,
                 maxLines: 1,
               ),
@@ -689,9 +701,9 @@ class _PartitionBoardScreenState extends State<PartitionBoardScreen> {
                 backgroundOpacity: 0.4,
                 padding:
                     const EdgeInsets.symmetric(horizontal: pad, vertical: 6),
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Center(
+                child: Center(
+                  child: Transform.translate(
+                    offset: const Offset(0, -0.5),
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
@@ -1618,46 +1630,25 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
-      child: Dialog(
-        backgroundColor: Colors.transparent,
-        alignment: Alignment.center,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: PartitionGlassDialog(
+        constraints: BoxConstraints(
+          maxWidth: dialogW,
+          minWidth: dialogW,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        blurSigma: 18,
+        borderColor: Colors.white.withOpacity(0.22),
+        gradient: const LinearGradient(
+          colors: [Colors.transparent, Colors.transparent],
+        ),
+        boxShadow: const [],
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
         child: GestureDetector(
           onTap: () {},
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: dialogW,
-              minWidth: dialogW,
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(255, 255, 255, 0.25),
-                    offset: Offset(4, 4),
-                    blurRadius: 30,
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.5),
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
                   Stack(
                     alignment: Alignment.center,
                     children: [
@@ -1846,11 +1837,17 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                                 horizontal: 8,
                                 vertical: 10,
                               ),
-                              child: Text(
-                                _formatField(_start),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: fieldStyle,
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: Center(
+                                  child: Text(
+                                    _formatField(_start),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: fieldStyle,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1879,11 +1876,17 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                                 horizontal: 8,
                                 vertical: 10,
                               ),
-                              child: Text(
-                                _formatField(_end),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: fieldStyle,
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: Center(
+                                  child: Text(
+                                    _formatField(_end),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: fieldStyle,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1900,13 +1903,7 @@ class _ReservationFormDialogState extends State<_ReservationFormDialog> {
                       onPressed: () => _submit(),
                     ),
                   ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            ],
           ),
         ),
       ),
@@ -2046,52 +2043,45 @@ class _ReservationItemManageDialogState
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
-      child: Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: PartitionGlassDialog(
+        constraints: BoxConstraints(maxWidth: dialogW, minWidth: dialogW),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
         child: GestureDetector(
           onTap: () {},
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: dialogW, minWidth: dialogW),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(20),
-                    border:
-                        Border.all(color: Colors.white.withOpacity(0.5)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                '예약 물품 추가/수정',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w800,
-                                  fontFamily: 'Pretendard Variable',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+                        SizedBox(
+                          height: 32,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              const Center(
+                                child: Text(
+                                  '예약 물품 추가/수정',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    fontFamily: 'Pretendard Variable',
+                                  ),
                                 ),
                               ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              icon: const Icon(Icons.close_rounded,
-                                  color: Colors.white70),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                          ],
+                              Positioned(
+                                right: -8,
+                                child: IconButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    color: Colors.white70,
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 14),
                         // 탭 토글
@@ -2253,12 +2243,7 @@ class _ReservationItemManageDialogState
                                   ),
                           ],
                         ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            ],
           ),
         ),
       ),

@@ -17,6 +17,7 @@ import 'package:partition_app/features/partition/widgets/shared_expense_manual_m
 import 'package:partition_app/features/partition/widgets/shared_expense_item_detail_sheet.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
 import 'package:partition_app/shared/widgets/glassmorphic_date_picker.dart';
+import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/features/partition/services/supply_service.dart';
@@ -39,20 +40,28 @@ class _PartitionSharedExpenseScreenState
   static const double _headerHeight = 87.5;
   static const double _contentPaddingHorizontal = 16.0;
   static const double _contentPaddingBottom = 16.0;
+
   /// 하단 글래스 탭바 등이 본문과 겹칠 때 스크롤로 버튼까지 닿게 하기 위한 추가 여백
   static const double _scrollBottomInsetForTabBar = 147.0;
+
   /// 스크롤 끝에서 탭바·손가락 여유까지 더 내릴 수 있게 하는 추가 하단 공간
   static const double _scrollExtraTailSpace = 56.0;
+
   /// 물품/공과금 칩 한 줄 높이(패딩 포함 추정) — 대칭 간격 계산용
   static const double _filterChipRowHeight = 46.0;
+
   /// [PartitionReportScreen] 과 동일 — band 계산 시 대칭 반쪽 높이 바닥
   static const double _minSymmetricPadBandHalf = 14.0;
+
   /// 리포트 `symmetricPad + 3`(조회 기간 행 상·하)과 동일
   static const double _anchorVerticalInsetBonus = 3.0;
+
   /// `band`에서 나눈 대칭 여백에 곱함 (리포트 `_chipVerticalSpacingScale` 과 동일)
   static const double _chipVerticalSpacingScale = 0.5;
+
   /// 리포트 `_reportSectionGap` 과 통일 — 메인 카드와 하단 액션 줄 사이
   static const double _betweenMainCardAndActions = 24.0;
+
   /// 리포트 목록 마지막 `SizedBox(16)` 과 통일
   static const double _scrollListTailGap = 16.0;
   static const double _spacingSmall = 10.0;
@@ -61,9 +70,6 @@ class _PartitionSharedExpenseScreenState
   static const double _borderRadiusSmall = 24.0;
   static const double _borderRadiusMedium = 28.0;
   static const double _borderRadiusLarge = 32.0;
-  static const double _borderOpacity = 0.25;
-  static const double _blurSigma = 10.0;
-
   int _filterIndex = 0; // 0: 물품, 1: 공과금
   late DateTime _startDate;
   late DateTime _endDate;
@@ -91,6 +97,7 @@ class _PartitionSharedExpenseScreenState
   final Set<int> _selectedRowIndices = <int>{};
 
   static const int _tableItemsPerPage = 5;
+
   /// 표 `PageView` 세로 고정 높이 — 행은 `_tableItemsPerPage`칸 위에서부터 고정 슬롯
   static const double _tablePageViewHeightFixed = 132.0;
 
@@ -111,8 +118,7 @@ class _PartitionSharedExpenseScreenState
   }
 
   void _attachAlarmNavigationListenerIfNeeded() {
-    final nav =
-        Provider.of<AlarmNavigationController>(context, listen: false);
+    final nav = Provider.of<AlarmNavigationController>(context, listen: false);
     _alarmNav ??= nav;
     if (_alarmListenerAttached) return;
     _alarmListenerAttached = true;
@@ -171,80 +177,51 @@ class _PartitionSharedExpenseScreenState
 
   Future<void> _showSupplySettlementFromAlarm(int settlementId) async {
     try {
-      final detail =
-          await _supplyService.fetchSettlementDetail(settlementId);
+      final detail = await _supplyService.fetchSettlementDetail(settlementId);
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF2A2A2A),
-          title: Text(
-            '공동 구매 정산 #${detail.settlementId}',
-            style: const TextStyle(color: Colors.white),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '총액 ${detail.totalAmount}원 · 1인 ${detail.amountPerMember}원 · '
-                  '확정 ${detail.isConfirmed ? "예" : "아니오"}',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 12),
-                ...detail.items.map(
-                  (e) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      '${e.itemName} · ${e.amount}원',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('닫기'),
-            ),
-            if (!detail.isConfirmed)
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  try {
-                    await _supplyService.confirmSettlement(settlementId);
-                    if (!mounted) return;
-                    await _loadGoodsPurchases();
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('정산을 확정했습니다.'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  } catch (e) {
-                    if (!mounted) return;
-                    final msg =
-                        e is ApiException ? e.message : '정산 확정에 실패했습니다.';
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(msg),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }
-                },
-                child: const Text(
-                  '정산 확정',
-                  style: TextStyle(color: Colors.amberAccent),
-                ),
+      final shouldConfirm = await _showAlarmSettlementDialog(
+        title: '공동 구매 정산',
+        settlementId: detail.settlementId,
+        statusLabel: detail.isConfirmed ? '확정 완료' : '확정 필요',
+        statusAccent: detail.isConfirmed,
+        totalAmountLabel: '총액',
+        totalAmountValue: '${detail.totalAmount}원',
+        splitAmountLabel: '1인 부담',
+        splitAmountValue: '${detail.amountPerMember}원',
+        itemLabel: '구매 항목',
+        items: detail.items
+            .map(
+              (e) => (
+                title: e.itemName,
+                value: '${e.amount}원',
               ),
-          ],
-        ),
+            )
+            .toList(),
+        confirmLabel: detail.isConfirmed ? null : '정산 확정',
       );
+      if (shouldConfirm != true) return;
+
+      try {
+        await _supplyService.confirmSettlement(settlementId);
+        if (!mounted) return;
+        await _loadGoodsPurchases();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('정산을 확정했습니다.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        final msg = e is ApiException ? e.message : '정산 확정에 실패했습니다.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       final msg = e is ApiException ? e.message : '정산 정보를 불러오지 못했습니다.';
@@ -259,79 +236,49 @@ class _PartitionSharedExpenseScreenState
       final detail =
           await _utilityBillService.fetchBillSettlementDetail(settlementId);
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          backgroundColor: const Color(0xFF2A2A2A),
-          title: Text(
-            '공과금 정산 #${detail.settlementId}',
-            style: const TextStyle(color: Colors.white),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '총액 ${detail.totalAmount}원 · 1인 ${detail.amountPerMember}원 · '
-                  '완료 ${detail.isConfirmed ? "예" : "아니오"}',
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 12),
-                ...detail.items.map(
-                  (e) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      '${e.utilityTypeName} · ${e.amount}원',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('닫기'),
-            ),
-            if (!detail.isConfirmed)
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(ctx);
-                  try {
-                    await _utilityBillService.confirmBillSettlement(
-                      settlementId,
-                    );
-                    if (!mounted) return;
-                    await _loadUtilityBills();
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('정산을 완료했습니다.'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  } catch (e) {
-                    if (!mounted) return;
-                    final msg =
-                        e is ApiException ? e.message : '정산 완료에 실패했습니다.';
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(msg),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  }
-                },
-                child: const Text(
-                  '정산 완료',
-                  style: TextStyle(color: Colors.amberAccent),
-                ),
+      final shouldConfirm = await _showAlarmSettlementDialog(
+        title: '공과금 정산',
+        settlementId: detail.settlementId,
+        statusLabel: detail.isConfirmed ? '정산 완료' : '정산 필요',
+        statusAccent: detail.isConfirmed,
+        totalAmountLabel: '총액',
+        totalAmountValue: '${detail.totalAmount}원',
+        splitAmountLabel: '1인 부담',
+        splitAmountValue: '${detail.amountPerMember}원',
+        itemLabel: '청구 항목',
+        items: detail.items
+            .map(
+              (e) => (
+                title: e.utilityTypeName,
+                value: '${e.amount}원',
               ),
-          ],
-        ),
+            )
+            .toList(),
+        confirmLabel: detail.isConfirmed ? null : '정산 완료',
       );
+      if (shouldConfirm != true) return;
+
+      try {
+        await _utilityBillService.confirmBillSettlement(settlementId);
+        if (!mounted) return;
+        await _loadUtilityBills();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('정산을 완료했습니다.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        final msg = e is ApiException ? e.message : '정산 완료에 실패했습니다.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       final msg = e is ApiException ? e.message : '정산 정보를 불러오지 못했습니다.';
@@ -339,6 +286,358 @@ class _PartitionSharedExpenseScreenState
         SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
       );
     }
+  }
+
+  Future<bool?> _showAlarmSettlementDialog({
+    required String title,
+    required int settlementId,
+    required String statusLabel,
+    required bool statusAccent,
+    required String totalAmountLabel,
+    required String totalAmountValue,
+    required String splitAmountLabel,
+    required String splitAmountValue,
+    required String itemLabel,
+    required List<({String title, String value})> items,
+    String? confirmLabel,
+  }) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final listHeight = (screenHeight * 0.28).clamp(140.0, 240.0);
+
+    return showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.56),
+      builder: (ctx) => PartitionGlassDialog(
+        constraints: const BoxConstraints(maxWidth: 360),
+        borderRadius: BorderRadius.circular(24),
+        blurSigma: 18,
+        borderColor: Colors.white.withOpacity(0.22),
+        gradient: const LinearGradient(
+          colors: [Colors.transparent, Colors.transparent],
+        ),
+        boxShadow: const [],
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 34,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                  Positioned(
+                    right: -8,
+                    child: IconButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white70,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '알림으로 도착한 정산 내역이에요',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.68),
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                fontFamily: 'Pretendard Variable',
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.16),
+                  width: 0.6,
+                ),
+                color: Colors.white.withOpacity(0.05),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '정산번호 #$settlementId',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            fontFamily: 'Pretendard Variable',
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          statusLabel,
+                          style: TextStyle(
+                            color: statusAccent
+                                ? const Color.fromRGBO(198, 255, 214, 1)
+                                : Colors.white.withOpacity(0.78),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            fontFamily: 'Pretendard Variable',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: statusAccent
+                          ? const Color.fromRGBO(132, 240, 174, 0.14)
+                          : Colors.white.withOpacity(0.08),
+                      border: Border.all(
+                        color: statusAccent
+                            ? const Color.fromRGBO(188, 255, 212, 0.24)
+                            : Colors.white.withOpacity(0.12),
+                        width: 0.5,
+                      ),
+                    ),
+                    child: Text(
+                      statusAccent ? '완료' : '진행 중',
+                      style: TextStyle(
+                        color: statusAccent
+                            ? const Color.fromRGBO(214, 255, 226, 1)
+                            : Colors.white.withOpacity(0.8),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildAlarmSettlementInfoCard(
+                    label: totalAmountLabel,
+                    value: totalAmountValue,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildAlarmSettlementInfoCard(
+                    label: splitAmountLabel,
+                    value: splitAmountValue,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text(
+              itemLabel,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.94),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.14),
+                  width: 0.6,
+                ),
+                color: Colors.white.withOpacity(0.04),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: listHeight),
+                child: items.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        child: Text(
+                          '표시할 항목이 없습니다.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.52),
+                            fontSize: 12,
+                            fontFamily: 'Pretendard Variable',
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        itemCount: items.length,
+                        separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          thickness: 0.5,
+                          color: Colors.white.withOpacity(0.08),
+                        ),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item.title,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      fontFamily: 'Pretendard Variable',
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  item.value,
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'Pretendard Variable',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildAlarmSettlementActionButton(
+                    label: '닫기',
+                    filled: false,
+                    onTap: () => Navigator.of(ctx).pop(false),
+                  ),
+                ),
+                if (confirmLabel != null) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildAlarmSettlementActionButton(
+                      label: confirmLabel,
+                      filled: true,
+                      onTap: () => Navigator.of(ctx).pop(true),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAlarmSettlementInfoCard({
+    required String label,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.14),
+          width: 0.6,
+        ),
+        color: Colors.white.withOpacity(0.04),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.6),
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              fontFamily: 'Pretendard Variable',
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'Pretendard Variable',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAlarmSettlementActionButton({
+    required String label,
+    required VoidCallback onTap,
+    required bool filled,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          height: 44,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: filled ? Colors.white.withOpacity(0.12) : Colors.transparent,
+            border: Border.all(
+              color: Colors.white.withOpacity(filled ? 0.2 : 0.14),
+              width: 0.6,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.96),
+                fontSize: 14,
+                fontWeight: filled ? FontWeight.w700 : FontWeight.w500,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -352,10 +651,10 @@ class _PartitionSharedExpenseScreenState
     _sharedExpenseDummySynced = useDummy;
     setState(() {
       if (useDummy) {
-        _goodsExpenseItems =
-            List<SharedExpenseTableItem>.from(_dummyItemsForSharedExpenseTable(0));
-        _utilityExpenseItems =
-            List<SharedExpenseTableItem>.from(_dummyItemsForSharedExpenseTable(1));
+        _goodsExpenseItems = List<SharedExpenseTableItem>.from(
+            _dummyItemsForSharedExpenseTable(0));
+        _utilityExpenseItems = List<SharedExpenseTableItem>.from(
+            _dummyItemsForSharedExpenseTable(1));
       } else {
         _goodsExpenseItems = [];
         _utilityExpenseItems = [];
@@ -397,9 +696,8 @@ class _PartitionSharedExpenseScreenState
       );
       if (!mounted) return;
       setState(() {
-        _goodsExpenseItems = result.purchases
-            .map((e) => e.toSharedExpenseTableItem())
-            .toList();
+        _goodsExpenseItems =
+            result.purchases.map((e) => e.toSharedExpenseTableItem()).toList();
         _goodsPurchasesLoading = false;
         _clampTablePageIndex();
       });
@@ -465,10 +763,15 @@ class _PartitionSharedExpenseScreenState
     if (!mounted || !_useGoodsPurchasesApi(context)) return;
     await _loadUtilityBills();
     if (!mounted) return;
-    final serverIds =
-        _utilityExpenseItems.map((e) => e.billId).whereType<int>().where((id) => id > 0).toSet();
-    final missingFromGet =
-        modalItems.where((e) => e.billId != null && e.billId! > 0 && !serverIds.contains(e.billId!)).toList();
+    final serverIds = _utilityExpenseItems
+        .map((e) => e.billId)
+        .whereType<int>()
+        .where((id) => id > 0)
+        .toSet();
+    final missingFromGet = modalItems
+        .where((e) =>
+            e.billId != null && e.billId! > 0 && !serverIds.contains(e.billId!))
+        .toList();
     if (missingFromGet.isEmpty) return;
     setState(() {
       _utilityExpenseItems = [...missingFromGet, ..._utilityExpenseItems];
@@ -507,10 +810,8 @@ class _PartitionSharedExpenseScreenState
     int? initialEditIndex,
     bool addOnlyEntry = false,
   }) {
-    final goodsFromApi =
-        _filterIndex == 0 && _useGoodsPurchasesApi(context);
-    final utilityFromApi =
-        _filterIndex == 1 && _useGoodsPurchasesApi(context);
+    final goodsFromApi = _filterIndex == 0 && _useGoodsPurchasesApi(context);
+    final utilityFromApi = _filterIndex == 1 && _useGoodsPurchasesApi(context);
     showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
@@ -518,6 +819,7 @@ class _PartitionSharedExpenseScreenState
         isUtility: _filterIndex == 1,
         deletePurchasesViaApi: goodsFromApi,
         submitUtilityViaApi: utilityFromApi,
+
         /// 서버(공용소비) 물품도 표와 동일 목록을 넣어 [purchaseId]로 PATCH 수정 가능
         initialItems: List<SharedExpenseTableItem>.from(
           _itemsForCurrentFilter(),
@@ -549,9 +851,7 @@ class _PartitionSharedExpenseScreenState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _filterIndex == 1
-                  ? '공과금 내역을 반영했어요.'
-                  : '공용 소비 내역을 반영했어요.',
+              _filterIndex == 1 ? '공과금 내역을 반영했어요.' : '공용 소비 내역을 반영했어요.',
             ),
             duration: const Duration(seconds: 2),
           ),
@@ -616,8 +916,7 @@ class _PartitionSharedExpenseScreenState
     final memberIds = members.map((e) => e.userId).toList();
     if (memberIds.isEmpty) {
       throw ApiException(
-        message:
-            '정산에 포함할 멤버를 찾지 못했어요. 로그인·그룹 상태를 확인해 주세요.',
+        message: '정산에 포함할 멤버를 찾지 못했어요. 로그인·그룹 상태를 확인해 주세요.',
       );
     }
     final req = await _supplyService.requestSettlement(
@@ -656,8 +955,7 @@ class _PartitionSharedExpenseScreenState
         item: item,
         isUtility: _filterIndex == 1,
         onSettlementChanged: (v) async {
-          final goodsApi =
-              _filterIndex == 0 && _useGoodsPurchasesApi(context);
+          final goodsApi = _filterIndex == 0 && _useGoodsPurchasesApi(context);
           final pid = item.purchaseId;
           if (goodsApi && pid != null && pid > 0) {
             if (!v) {
@@ -720,8 +1018,8 @@ class _PartitionSharedExpenseScreenState
           });
         },
         onEditRequested: () => _showManualSharedExpenseModal(
-              initialEditIndex: globalIndex,
-            ),
+          initialEditIndex: globalIndex,
+        ),
         onDeleteRequested: () => _deleteRowsAtIndices({globalIndex}),
       ),
     );
@@ -831,12 +1129,9 @@ class _PartitionSharedExpenseScreenState
   double _estimatedBelowChipsContentHeightForFilter(int filterIndex) {
     final cardH = _estimateMainCardContentHeightForFilter(filterIndex);
     final actionCount = 1;
-    final actionsH =
-        46 * actionCount + _spacingSmall * (actionCount > 1 ? actionCount - 1 : 0);
-    return cardH +
-        _betweenMainCardAndActions +
-        actionsH +
-        _scrollListTailGap;
+    final actionsH = 46 * actionCount +
+        _spacingSmall * (actionCount > 1 ? actionCount - 1 : 0);
+    return cardH + _betweenMainCardAndActions + actionsH + _scrollListTailGap;
   }
 
   @override
@@ -857,42 +1152,40 @@ class _PartitionSharedExpenseScreenState
               // 부모 변경·탭 전환 등으로 `LayoutBuilder`만 유한 높이를 못 받는 경우가 있음.
               final mq = MediaQuery.sizeOf(context);
               final rawH = constraints.maxHeight;
-              final viewportH = (constraints.hasBoundedHeight &&
-                      rawH.isFinite &&
-                      rawH > 0)
-                  ? rawH
-                  : (mq.height -
-                          _headerHeight -
-                          MediaQuery.paddingOf(context).top -
-                          MediaQuery.paddingOf(context).bottom -
-                          150)
-                      .clamp(120.0, 100000.0);
+              final viewportH =
+                  (constraints.hasBoundedHeight && rawH.isFinite && rawH > 0)
+                      ? rawH
+                      : (mq.height -
+                              _headerHeight -
+                              MediaQuery.paddingOf(context).top -
+                              MediaQuery.paddingOf(context).bottom -
+                              150)
+                          .clamp(120.0, 100000.0);
               // 물품/공과금 전환 시 칩이 위아래로 움직이지 않도록, 더 큰 쪽 레이아웃 높이로만 여백 계산
               final hGoods = _estimatedBelowChipsContentHeightForFilter(0);
               final hUtility = _estimatedBelowChipsContentHeightForFilter(1);
-              final belowChipsContentH =
-                  hGoods > hUtility ? hGoods : hUtility;
-              final band = viewportH -
-                  belowChipsContentH -
-                  _contentPaddingBottom;
+              final belowChipsContentH = hGoods > hUtility ? hGoods : hUtility;
+              final band =
+                  viewportH - belowChipsContentH - _contentPaddingBottom;
               // 리포트: `(band - _dateCardAnchorHeight) / 2` + `_minSymmetricPadBandHalf`
-              final symmetricPadRaw =
-                  (band - _filterChipRowHeight) / 2.0;
+              final symmetricPadRaw = (band - _filterChipRowHeight) / 2.0;
               final symmetricPadFull =
                   symmetricPadRaw < _minSymmetricPadBandHalf
                       ? _minSymmetricPadBandHalf
                       : symmetricPadRaw;
-              final symmetricPad = (symmetricPadFull *
-                      _chipVerticalSpacingScale)
-                  .clamp(12.0, 88.0);
+              final symmetricPad =
+                  (symmetricPadFull * _chipVerticalSpacingScale)
+                      .clamp(12.0, 88.0);
               final anchorVerticalInset =
-                  symmetricPad + _anchorVerticalInsetBonus;
+                  ((symmetricPad + _anchorVerticalInsetBonus) * 0.7)
+                      .clamp(8.0, 64.0);
 
               return ListView(
                 physics: const BouncingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics(),
                 ),
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: EdgeInsets.fromLTRB(
                   _contentPaddingHorizontal,
                   0,
@@ -918,23 +1211,22 @@ class _PartitionSharedExpenseScreenState
 
   Widget _buildHeader() {
     final topInset = MediaQuery.paddingOf(context).top;
-    return Container(
+    return SizedBox(
       width: double.infinity,
       height: topInset + _headerHeight,
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.white.withOpacity(_borderOpacity),
-            width: 1,
-          ),
-        ),
-      ),
-      child: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: _blurSigma, sigmaY: _blurSigma),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15), // 하단바(0.4)보다 투명하지만 현재보다 불투명
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: double.infinity,
+            height: topInset + _headerHeight,
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: Colors.white,
+                  width: 0.5,
+                ),
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.max,
@@ -953,20 +1245,13 @@ class _PartitionSharedExpenseScreenState
                           '공용소비',
                           textAlign: TextAlign.center,
                           maxLines: 1,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Colors.white,
                             fontFamily: 'Pretendard Variable',
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
                             height: 1.1,
                             letterSpacing: -0.2,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black.withOpacity(0.35),
-                                offset: const Offset(0, 0.5),
-                                blurRadius: 2,
-                              ),
-                            ],
                           ),
                         ),
                       ),
@@ -976,7 +1261,27 @@ class _PartitionSharedExpenseScreenState
               ],
             ),
           ),
-        ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: -1,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.28),
+                      blurRadius: 10,
+                      spreadRadius: 0,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: const SizedBox(height: 1),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1147,8 +1452,8 @@ class _PartitionSharedExpenseScreenState
                             selectionMode: _tableSelectionMode,
                             pageIndex: pageIndex,
                             itemsPerPage: _tableItemsPerPage,
-                            rowSlotHeight: _tablePageViewHeight /
-                                _tableItemsPerPage,
+                            rowSlotHeight:
+                                _tablePageViewHeight / _tableItemsPerPage,
                             selectedIndices: _selectedRowIndices,
                             onToggleRow: _toggleRowSelection,
                           );
@@ -1189,9 +1494,8 @@ class _PartitionSharedExpenseScreenState
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Tooltip(
-                  message: _tableSelectionMode
-                      ? '선택 종료'
-                      : '여러 항목 선택 후 정산 완료 표시·삭제',
+                  message:
+                      _tableSelectionMode ? '선택 종료' : '여러 항목 선택 후 정산 완료 표시·삭제',
                   child: _buildCircleArrow(
                     _tableSelectionMode
                         ? Icons.close_rounded
@@ -1222,9 +1526,7 @@ class _PartitionSharedExpenseScreenState
                           ),
                           const SizedBox(width: 6),
                           _buildSelectionActionChip(
-                            selectionAllSettled
-                                ? '정산 해제'
-                                : '정산 완료',
+                            selectionAllSettled ? '정산 해제' : '정산 완료',
                             selectionAllSettled
                                 ? _cancelSettlementSelectedRows
                                 : _settleSelectedRows,
@@ -1235,13 +1537,12 @@ class _PartitionSharedExpenseScreenState
                   )
                 else
                   Tooltip(
-                    message:
-                        isUtility ? '공과금 직접 추가' : '소비 내역 직접 추가',
+                    message: isUtility ? '공과금 직접 추가' : '소비 내역 직접 추가',
                     child: _buildCircleArrow(
                       Icons.add_rounded,
                       onTap: () => _showManualSharedExpenseModal(
-                            addOnlyEntry: true,
-                          ),
+                        addOnlyEntry: true,
+                      ),
                     ),
                   ),
               ],
@@ -1254,7 +1555,7 @@ class _PartitionSharedExpenseScreenState
 
   List<Widget> _buildActionButtons() {
     final isUtility = _filterIndex == 1;
-    
+
     if (isUtility) {
       return [];
     } else {
@@ -1336,13 +1637,14 @@ class _PartitionSharedExpenseScreenState
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(label, style: labelStyle),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
+              alignment: Alignment.center,
               child: Text(
                 date,
+                textAlign: TextAlign.center,
                 style: dateStyle,
                 maxLines: 1,
               ),
@@ -1402,7 +1704,8 @@ class _PartitionSharedExpenseScreenState
               child: FrostedPanel(
                 borderRadius: BorderRadius.circular(20),
                 backgroundOpacity: 0.4,
-                padding: const EdgeInsets.symmetric(horizontal: padContent, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: padContent, vertical: 6),
                 child: const Padding(
                   padding: EdgeInsets.only(top: 2),
                   child: Center(
@@ -1424,7 +1727,8 @@ class _PartitionSharedExpenseScreenState
               child: FrostedPanel(
                 borderRadius: BorderRadius.circular(20),
                 backgroundOpacity: 0.4,
-                padding: const EdgeInsets.symmetric(horizontal: padDate, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: padDate, vertical: 6),
                 child: Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Center(
@@ -1446,7 +1750,8 @@ class _PartitionSharedExpenseScreenState
               child: FrostedPanel(
                 borderRadius: BorderRadius.circular(20),
                 backgroundOpacity: 0.4,
-                padding: const EdgeInsets.symmetric(horizontal: padAmount, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: padAmount, vertical: 6),
                 child: Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Center(
@@ -1468,7 +1773,8 @@ class _PartitionSharedExpenseScreenState
               child: FrostedPanel(
                 borderRadius: BorderRadius.circular(20),
                 backgroundOpacity: 0.4,
-                padding: const EdgeInsets.symmetric(horizontal: padQty, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: padQty, vertical: 6),
                 child: Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Center(
@@ -1705,8 +2011,7 @@ class _PartitionSharedExpenseScreenState
     final goodsApi = _filterIndex == 0 && _useGoodsPurchasesApi(context);
     if (goodsApi) {
       final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
-      final sorted = indices.toList()
-        ..sort((a, b) => b.compareTo(a));
+      final sorted = indices.toList()..sort((a, b) => b.compareTo(a));
       final ids = <int>[];
       for (final i in sorted) {
         if (i < 0 || i >= list.length) continue;
@@ -1753,8 +2058,7 @@ class _PartitionSharedExpenseScreenState
     final billsApi = _filterIndex == 1 && _useGoodsPurchasesApi(context);
     if (billsApi) {
       final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
-      final sorted = indices.toList()
-        ..sort((a, b) => b.compareTo(a));
+      final sorted = indices.toList()..sort((a, b) => b.compareTo(a));
       final billIds = <int>[];
       for (final i in sorted) {
         if (i < 0 || i >= list.length) continue;
@@ -1800,8 +2104,7 @@ class _PartitionSharedExpenseScreenState
 
     setState(() {
       final list = List<SharedExpenseTableItem>.from(_itemsForCurrentFilter());
-      final sorted = indices.toList()
-        ..sort((a, b) => b.compareTo(a));
+      final sorted = indices.toList()..sort((a, b) => b.compareTo(a));
       for (final i in sorted) {
         if (i >= 0 && i < list.length) list.removeAt(i);
       }
@@ -1995,8 +2298,7 @@ class _PartitionSharedExpenseScreenState
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => _UtilityBillSettlementFlowDialog(
-        fallbackItems:
-            List<SharedExpenseTableItem>.from(_utilityExpenseItems),
+        fallbackItems: List<SharedExpenseTableItem>.from(_utilityExpenseItems),
         fetchSettlementListViaApi: api,
         initialRangeStart: _startDate,
         initialRangeEnd: _endDate,
@@ -2026,6 +2328,7 @@ class _SharedExpenseTableBody extends StatelessWidget {
   final bool selectionMode;
   final int pageIndex;
   final int itemsPerPage;
+
   /// 한 페이지당 행 슬롯 높이 (`PageView` 높이 / `itemsPerPage`)
   final double rowSlotHeight;
   final Set<int> selectedIndices;
@@ -2109,9 +2412,8 @@ class _SharedExpenseTableBody extends StatelessWidget {
     final lastColFlex = isUtility ? 3 : 2;
 
     /// 물품 품목명: 6자 초과 시 앞 6자 + … (공과금은 전체 표시용 FittedBox)
-    final displayName = !isUtility && label.length > 6
-        ? '${label.substring(0, 6)}...'
-        : label;
+    final displayName =
+        !isUtility && label.length > 6 ? '${label.substring(0, 6)}...' : label;
 
     /// 금액·수량 등 긴 문자열용 (날짜는 축소 없이 고정 글자 크기)
     Widget fittedCell(String text, TextStyle style) {
@@ -2258,46 +2560,25 @@ List<SharedExpenseTableItem> _dummyItemsForSharedExpenseTable(int filterIndex) {
   if (isUtility) {
     return [
       const SharedExpenseTableItem(
-          name: 'TV 수신료',
-          date: '매달 1일',
-          amount: '2,500원',
-          quantity: '자동이체'),
+          name: 'TV 수신료', date: '매달 1일', amount: '2,500원', quantity: '자동이체'),
       const SharedExpenseTableItem(
           name: '주차비', date: '매달 5일', amount: '50,000원', quantity: '고정'),
       const SharedExpenseTableItem(
           name: '월세', date: '매달 6일', amount: '60만원', quantity: '고정'),
       const SharedExpenseTableItem(
-          name: '인터넷',
-          date: '매달 8일',
-          amount: '33,000원',
-          quantity: '자동이체'),
+          name: '인터넷', date: '매달 8일', amount: '33,000원', quantity: '자동이체'),
       const SharedExpenseTableItem(
-          name: '수도세',
-          date: '매달 10일',
-          amount: '알 수 없음',
-          quantity: '후불'),
+          name: '수도세', date: '매달 10일', amount: '알 수 없음', quantity: '후불'),
       const SharedExpenseTableItem(
           name: '관리비', date: '매달 12일', amount: '15만원', quantity: '고정'),
       const SharedExpenseTableItem(
-          name: '전기세',
-          date: '매달 15일',
-          amount: '45,000원',
-          quantity: '자동이체'),
+          name: '전기세', date: '매달 15일', amount: '45,000원', quantity: '자동이체'),
       const SharedExpenseTableItem(
-          name: '공용 전기',
-          date: '매달 18일',
-          amount: '8,200원',
-          quantity: '후불'),
+          name: '공용 전기', date: '매달 18일', amount: '8,200원', quantity: '후불'),
       const SharedExpenseTableItem(
-          name: '가스세',
-          date: '매달 20일',
-          amount: '30,000원',
-          quantity: '자동이체'),
+          name: '가스세', date: '매달 20일', amount: '30,000원', quantity: '자동이체'),
       const SharedExpenseTableItem(
-          name: '건물 보험',
-          date: '매달 25일',
-          amount: '12,000원',
-          quantity: '연납'),
+          name: '건물 보험', date: '매달 25일', amount: '12,000원', quantity: '연납'),
     ];
   }
   return [
@@ -2316,45 +2597,27 @@ List<SharedExpenseTableItem> _dummyItemsForSharedExpenseTable(int filterIndex) {
         minorCategory: '휴지',
         manuallySettled: false),
     const SharedExpenseTableItem(
-        name: '10W 충전기',
-        date: '25.05.14.',
-        amount: '9,000원',
-        quantity: '2개'),
+        name: '10W 충전기', date: '25.05.14.', amount: '9,000원', quantity: '2개'),
     const SharedExpenseTableItem(
         name: '그래놀라 450g',
         date: '25.05.16.',
         amount: '12,000원',
         quantity: '3개'),
     const SharedExpenseTableItem(
-        name: '인덕션용 냄비',
-        date: '25.05.17.',
-        amount: '20,000원',
-        quantity: '1개'),
+        name: '인덕션용 냄비', date: '25.05.17.', amount: '20,000원', quantity: '1개'),
     const SharedExpenseTableItem(
         name: '커피 원두 1kg',
         date: '25.05.18.',
         amount: '18,500원',
         quantity: '2개'),
     const SharedExpenseTableItem(
-        name: '주방 세제 세트',
-        date: '25.05.19.',
-        amount: '6,400원',
-        quantity: '1개'),
+        name: '주방 세제 세트', date: '25.05.19.', amount: '6,400원', quantity: '1개'),
     const SharedExpenseTableItem(
-        name: '라면 5입 묶음',
-        date: '25.05.20.',
-        amount: '4,200원',
-        quantity: '4개'),
+        name: '라면 5입 묶음', date: '25.05.20.', amount: '4,200원', quantity: '4개'),
     const SharedExpenseTableItem(
-        name: '우유 900ml',
-        date: '25.05.21.',
-        amount: '3,100원',
-        quantity: '5개'),
+        name: '우유 900ml', date: '25.05.21.', amount: '3,100원', quantity: '5개'),
     const SharedExpenseTableItem(
-        name: '계란 30구',
-        date: '25.05.22.',
-        amount: '7,800원',
-        quantity: '2개'),
+        name: '계란 30구', date: '25.05.22.', amount: '7,800원', quantity: '2개'),
   ];
 }
 
@@ -2378,49 +2641,50 @@ List<List<SharedExpenseTableItem>> _paginateSharedExpenseItems(
 class _SharedGlassDialogShell extends StatelessWidget {
   final Widget child;
   final BoxConstraints constraints;
+  final bool useSettingsModalStyle;
 
   const _SharedGlassDialogShell({
     required this.child,
     required this.constraints,
+    this.useSettingsModalStyle = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
+    return PartitionGlassDialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      child: ConstrainedBox(
-        constraints: constraints,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white, width: 0.5),
-                gradient: const RadialGradient(
-                  center: Alignment(-0.1212, -0.1178),
-                  radius: 1.7145,
-                  colors: [
-                    Color.fromRGBO(255, 255, 255, 0.10),
-                    Color.fromRGBO(255, 255, 255, 0.15),
-                  ],
-                  stops: [0.0, 1.0],
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(255, 255, 255, 0.25),
-                    offset: Offset(4, 4),
-                    blurRadius: 30,
-                  ),
-                ],
-              ),
-              child: child,
+      constraints: constraints,
+      borderRadius: BorderRadius.circular(useSettingsModalStyle ? 24 : 20),
+      blurSigma: useSettingsModalStyle ? 18 : 10,
+      fillColor: useSettingsModalStyle
+          ? const Color.fromRGBO(255, 255, 255, 0.12)
+          : Colors.transparent,
+      borderColor: useSettingsModalStyle
+          ? Colors.white.withOpacity(0.22)
+          : const Color.fromRGBO(255, 255, 255, 0.5),
+      gradient: useSettingsModalStyle
+          ? const LinearGradient(
+              colors: [Colors.transparent, Colors.transparent],
+            )
+          : const RadialGradient(
+              center: Alignment(-0.1212, -0.1178),
+              radius: 1.7145,
+              colors: [
+                Color.fromRGBO(255, 255, 255, 0.10),
+                Color.fromRGBO(255, 255, 255, 0.15),
+              ],
+              stops: [0.0, 1.0],
             ),
-          ),
-        ),
-      ),
+      boxShadow: useSettingsModalStyle
+          ? const []
+          : const [
+              BoxShadow(
+                color: Color.fromRGBO(255, 255, 255, 0.25),
+                offset: Offset(4, 4),
+                blurRadius: 30,
+              ),
+            ],
+      child: child,
     );
   }
 }
@@ -2631,9 +2895,7 @@ class _SharedExpenseSettlementFlowDialogState
             name: row.displayLabel,
             amountWon: e.amount,
             purchaseId: e.purchaseId,
-            statusLabel: e.status?.trim().isNotEmpty == true
-                ? e.status
-                : null,
+            statusLabel: e.status?.trim().isNotEmpty == true ? e.status : null,
             selected: true,
           );
         }).toList();
@@ -2958,8 +3220,7 @@ class _SharedExpenseSettlementFlowDialogState
                     height: 32,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.white70),
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
                     ),
                   ),
                 ),
@@ -3137,8 +3398,7 @@ class _SharedExpenseSettlementFlowDialogState
                 children: [
                   Icon(
                     sel ? Icons.check_circle_rounded : Icons.circle_outlined,
-                    color:
-                        sel ? Colors.white : Colors.white.withOpacity(0.45),
+                    color: sel ? Colors.white : Colors.white.withOpacity(0.45),
                     size: 24,
                   ),
                   const SizedBox(width: 10),
@@ -3402,9 +3662,8 @@ class _SharedExpenseSettlementFlowDialogState
         maxWidth: sw - 32,
         maxHeight: sh * 0.72,
       ),
-      child: _step == 0
-          ? _buildStepSelect(context)
-          : _buildStepMembers(context),
+      child:
+          _step == 0 ? _buildStepSelect(context) : _buildStepMembers(context),
     );
   }
 }
@@ -3423,6 +3682,7 @@ class _UtilityBillSettlementFlowDialog extends StatefulWidget {
   final bool fetchSettlementListViaApi;
   final DateTime? initialRangeStart;
   final DateTime? initialRangeEnd;
+
   /// POST 정산 요청 성공 후 부모가 목록을 다시 불러올 때
   final VoidCallback? onFinished;
 
@@ -3515,9 +3775,8 @@ class _UtilityBillSettlementFlowDialogState
               (b) => _UtilitySelectableLine(item: b.toSharedExpenseTableItem()),
             )
             .toList();
-        _lastServerAmountPerMember = summary.amountPerMember > 0
-            ? summary.amountPerMember
-            : null;
+        _lastServerAmountPerMember =
+            summary.amountPerMember > 0 ? summary.amountPerMember : null;
         _settlementListLoading = false;
         _recalculatePerPerson();
         _ensureMemberAmountControllers();
@@ -3561,8 +3820,7 @@ class _UtilityBillSettlementFlowDialogState
     _ensureMemberAmountControllers();
     for (var i = 0; i < _memberNames.length; i++) {
       if (_memberSelected[i]) {
-        _memberAmountCtrls[i].text =
-            _perPersonWon > 0 ? '$_perPersonWon' : '0';
+        _memberAmountCtrls[i].text = _perPersonWon > 0 ? '$_perPersonWon' : '0';
       } else {
         _memberAmountCtrls[i].text = '0';
       }
@@ -4045,8 +4303,7 @@ class _UtilityBillSettlementFlowDialogState
                 children: [
                   Icon(
                     sel ? Icons.check_circle_rounded : Icons.circle_outlined,
-                    color:
-                        sel ? Colors.white : Colors.white.withOpacity(0.45),
+                    color: sel ? Colors.white : Colors.white.withOpacity(0.45),
                     size: 24,
                   ),
                   const SizedBox(width: 10),
@@ -4253,7 +4510,8 @@ class _UtilityBillSettlementFlowDialogState
 
                 setState(() => _submittingBillSettlement = true);
                 try {
-                  final result = await _utilityBillService.requestBillSettlement(
+                  final result =
+                      await _utilityBillService.requestBillSettlement(
                     billIds: billIds,
                     memberIds: memberIds,
                   );
@@ -4468,6 +4726,7 @@ class _ExtractedReceiptLine {
   int amountWon;
   int qty;
   bool selected;
+
   /// API가 준 category / subCategory 코드 (null이면 등록 시 기본값 사용)
   String? categoryCode;
   String? subCategoryCode;
@@ -4633,8 +4892,8 @@ class _AiReceiptRecognitionFlowDialogState
       });
     } on PlatformException catch (e) {
       if (!mounted) return;
-      final denied = e.code == 'photo_access_denied' ||
-          e.code == 'camera_access_denied';
+      final denied =
+          e.code == 'photo_access_denied' || e.code == 'camera_access_denied';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -4710,10 +4969,9 @@ class _AiReceiptRecognitionFlowDialogState
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       for (final line in selected) {
-        final cat =
-            (line.categoryCode != null && line.categoryCode!.isNotEmpty)
-                ? line.categoryCode!
-                : defMaj;
+        final cat = (line.categoryCode != null && line.categoryCode!.isNotEmpty)
+            ? line.categoryCode!
+            : defMaj;
         final sub =
             (line.subCategoryCode != null && line.subCategoryCode!.isNotEmpty)
                 ? line.subCategoryCode!
@@ -4778,7 +5036,8 @@ class _AiReceiptRecognitionFlowDialogState
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: const Color(0xFF2C2C2E),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             '카메라 촬영 동의',
             style: TextStyle(
@@ -4880,6 +5139,7 @@ class _AiReceiptRecognitionFlowDialogState
     if (_step == 2) {
       return _SharedGlassDialogShell(
         constraints: BoxConstraints(maxWidth: sw - 32, maxHeight: maxH),
+        useSettingsModalStyle: true,
         child: SizedBox(
           height: maxH,
           child: _buildStepExtract(context),
@@ -4889,9 +5149,9 @@ class _AiReceiptRecognitionFlowDialogState
 
     return _SharedGlassDialogShell(
       constraints: BoxConstraints(maxWidth: sw - 32, maxHeight: maxH),
-      child: _step == 0
-          ? _buildStepCapture(context)
-          : _buildStepAnalyze(context),
+      useSettingsModalStyle: true,
+      child:
+          _step == 0 ? _buildStepCapture(context) : _buildStepAnalyze(context),
     );
   }
 
@@ -4919,7 +5179,8 @@ class _AiReceiptRecognitionFlowDialogState
               ),
               IconButton(
                 onPressed: _closeReceiptFlowDialog,
-                icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.9)),
+                icon: Icon(Icons.close_rounded,
+                    color: Colors.white.withOpacity(0.9)),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               ),
@@ -5129,14 +5390,13 @@ class _AiReceiptRecognitionFlowDialogState
 
     final picked = await showDialog<DateTime>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      builder: (ctx) => GlassmorphicDatePicker(
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (ctx) => _ReceiptExtractDatePickerDialog(
         initialDate: line.date.isBefore(first)
             ? first
             : (line.date.isAfter(last) ? last : line.date),
         firstDate: first,
         lastDate: last,
-        isStartDate: true,
       ),
     );
 
@@ -5149,8 +5409,7 @@ class _AiReceiptRecognitionFlowDialogState
 
   Future<void> _editExtractLineAmountWon(int index) async {
     final line = _lines[index];
-    final controller =
-        TextEditingController(text: line.amountWon.toString());
+    final controller = TextEditingController(text: line.amountWon.toString());
     final ok = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.55),
@@ -5369,7 +5628,8 @@ class _AiReceiptRecognitionFlowDialogState
               ),
               IconButton(
                 onPressed: _closeReceiptFlowDialog,
-                icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.9)),
+                icon: Icon(Icons.close_rounded,
+                    color: Colors.white.withOpacity(0.9)),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               ),
@@ -5464,3 +5724,294 @@ class _AiReceiptRecognitionFlowDialogState
   }
 }
 
+class _ReceiptExtractDatePickerDialog extends StatefulWidget {
+  const _ReceiptExtractDatePickerDialog({
+    required this.initialDate,
+    required this.firstDate,
+    required this.lastDate,
+  });
+
+  final DateTime initialDate;
+  final DateTime firstDate;
+  final DateTime lastDate;
+
+  @override
+  State<_ReceiptExtractDatePickerDialog> createState() =>
+      _ReceiptExtractDatePickerDialogState();
+}
+
+class _ReceiptExtractDatePickerDialogState
+    extends State<_ReceiptExtractDatePickerDialog> {
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = _clampDate(widget.initialDate);
+  }
+
+  DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  DateTime _clampDate(DateTime date) {
+    final first = _dateOnly(widget.firstDate);
+    final last = _dateOnly(widget.lastDate);
+    final target = _dateOnly(date);
+    if (target.isBefore(first)) return first;
+    if (target.isAfter(last)) return last;
+    return target;
+  }
+
+  List<int> get _years => [
+        for (int y = widget.firstDate.year; y <= widget.lastDate.year; y++) y,
+      ];
+
+  List<int> get _months {
+    final year = _selectedDate.year;
+    final startMonth =
+        year == widget.firstDate.year ? widget.firstDate.month : 1;
+    final endMonth = year == widget.lastDate.year ? widget.lastDate.month : 12;
+    return [for (int m = startMonth; m <= endMonth; m++) m];
+  }
+
+  void _updateYear(int? year) {
+    if (year == null) return;
+    final daysInMonth = DateTime(year, _selectedDate.month + 1, 0).day;
+    final next = DateTime(
+      year,
+      _selectedDate.month,
+      _selectedDate.day.clamp(1, daysInMonth),
+    );
+    setState(() => _selectedDate = _clampDate(next));
+  }
+
+  void _updateMonth(int? month) {
+    if (month == null) return;
+    final daysInMonth = DateTime(_selectedDate.year, month + 1, 0).day;
+    final next = DateTime(
+      _selectedDate.year,
+      month,
+      _selectedDate.day.clamp(1, daysInMonth),
+    );
+    setState(() => _selectedDate = _clampDate(next));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleMonth = DateTime(_selectedDate.year, _selectedDate.month, 1);
+    final firstWeekday = visibleMonth.weekday % 7;
+    final daysInMonth = DateTime(
+      visibleMonth.year,
+      visibleMonth.month + 1,
+      0,
+    ).day;
+    final totalCells = ((firstWeekday + daysInMonth + 6) ~/ 7) * 7;
+    final screen = MediaQuery.sizeOf(context);
+    final dialogW = (screen.width - 48).clamp(300.0, 360.0);
+
+    return PartitionGlassDialog(
+      constraints: BoxConstraints.tightFor(width: dialogW),
+      borderRadius: BorderRadius.circular(24),
+      blurSigma: 18,
+      borderColor: Colors.white.withOpacity(0.22),
+      gradient: const LinearGradient(
+        colors: [Colors.transparent, Colors.transparent],
+      ),
+      boxShadow: const [],
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '날짜 선택',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    fontFamily: 'Pretendard Variable',
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSelectorField<int>(
+                  value: _selectedDate.year,
+                  items: _years,
+                  labelBuilder: (year) => '$year년',
+                  onChanged: _updateYear,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildSelectorField<int>(
+                  value: _selectedDate.month,
+                  items: _months,
+                  labelBuilder: (month) => '$month월',
+                  onChanged: _updateMonth,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: const [
+              _ReceiptWeekdayLabel('일'),
+              _ReceiptWeekdayLabel('월'),
+              _ReceiptWeekdayLabel('화'),
+              _ReceiptWeekdayLabel('수'),
+              _ReceiptWeekdayLabel('목'),
+              _ReceiptWeekdayLabel('금'),
+              _ReceiptWeekdayLabel('토'),
+            ],
+          ),
+          const SizedBox(height: 8),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 7,
+              mainAxisSpacing: 6,
+              crossAxisSpacing: 6,
+              childAspectRatio: 1.1,
+            ),
+            itemCount: totalCells,
+            itemBuilder: (context, index) {
+              final day = index - firstWeekday + 1;
+              if (day < 1 || day > daysInMonth) {
+                return const SizedBox.shrink();
+              }
+              final date = DateTime(
+                visibleMonth.year,
+                visibleMonth.month,
+                day,
+              );
+              final selectable = !date.isBefore(_dateOnly(widget.firstDate)) &&
+                  !date.isAfter(_dateOnly(widget.lastDate));
+              final selected = _dateOnly(date) == _dateOnly(_selectedDate);
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: selectable ? () => Navigator.pop(context, date) : null,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      color: selected
+                          ? Colors.white.withOpacity(0.18)
+                          : Colors.white.withOpacity(0.06),
+                      border: Border.all(
+                        color: selected
+                            ? Colors.white.withOpacity(0.42)
+                            : Colors.white.withOpacity(0.12),
+                        width: 0.5,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$day',
+                      style: TextStyle(
+                        color: selectable
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.24),
+                        fontSize: 13,
+                        fontWeight:
+                            selected ? FontWeight.w700 : FontWeight.w500,
+                        fontFamily: 'Pretendard Variable',
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '${_selectedDate.year}.${_selectedDate.month.toString().padLeft(2, '0')}.${_selectedDate.day.toString().padLeft(2, '0')}.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.72),
+              fontSize: 13,
+              fontFamily: 'Pretendard Variable',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectorField<T>({
+    required T value,
+    required List<T> items,
+    required String Function(T value) labelBuilder,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withOpacity(0.18), width: 0.5),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: const Color(0xFF2C2C2E),
+          iconEnabledColor: Colors.white70,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            fontFamily: 'Pretendard Variable',
+          ),
+          items: items
+              .map(
+                (item) => DropdownMenuItem<T>(
+                  value: item,
+                  child: Text(labelBuilder(item)),
+                ),
+              )
+              .toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+}
+
+class _ReceiptWeekdayLabel extends StatelessWidget {
+  const _ReceiptWeekdayLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Center(
+        child: Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.7),
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            fontFamily: 'Pretendard Variable',
+          ),
+        ),
+      ),
+    );
+  }
+}

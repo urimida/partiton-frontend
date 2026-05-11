@@ -5,6 +5,7 @@ import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/features/partition/models/shared_expense_table_item.dart';
 import 'package:partition_app/features/partition/models/utility_bill_model.dart';
 import 'package:partition_app/features/partition/services/utility_bill_service.dart';
+import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 
 /// 공과금 추가하기 — 더미: 항목 다중 선택 + 매월 납부일 / API: 카테고리 조회 + 매달 payDay + POST
 class UtilityBillAddModal extends StatefulWidget {
@@ -353,44 +354,26 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
 
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
-      child: Dialog(
-        backgroundColor: Colors.transparent,
+      child: PartitionGlassDialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+        constraints: BoxConstraints.tightFor(
+          width: dialogW,
+          height: maxDialogH,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        blurSigma: 18,
+        borderColor: Colors.white.withOpacity(0.22),
+        gradient: const LinearGradient(
+          colors: [Colors.transparent, Colors.transparent],
+        ),
+        boxShadow: const [],
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
         child: GestureDetector(
           onTap: () {},
-          child: Container(
-            width: dialogW,
-            height: maxDialogH,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.55), width: 0.5),
-              gradient: const RadialGradient(
-                center: Alignment(-0.1212, -0.1178),
-                radius: 1.7145,
-                colors: [
-                  Color.fromRGBO(255, 255, 255, 0.10),
-                  Color.fromRGBO(255, 255, 255, 0.15),
-                ],
-                stops: [0.0, 1.0],
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color.fromRGBO(255, 255, 255, 0.2),
-                  offset: Offset(4, 4),
-                  blurRadius: 24,
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
                       const Text(
                         '공과금 추가하기',
                         textAlign: TextAlign.center,
@@ -702,11 +685,7 @@ class _UtilityBillAddModalState extends State<UtilityBillAddModal> {
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            ],
           ),
         ),
       ),

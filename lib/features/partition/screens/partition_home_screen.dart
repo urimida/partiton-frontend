@@ -11,6 +11,7 @@ import 'package:partition_app/features/partition/services/geocoding_service.dart
 import 'package:partition_app/shared/widgets/home_calendar_widget.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
 import 'package:partition_app/shared/widgets/chore_assignment_modal.dart';
+import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 import 'package:partition_app/shared/widgets/schedule_registration_modal.dart';
 import 'package:partition_app/shared/widgets/partition_home_settings_modal.dart';
 
@@ -317,47 +318,13 @@ class _PartitionGlassModalCard extends StatelessWidget {
     final screenW = MediaQuery.sizeOf(context).width;
     final capWidth = math.min(maxWidth, math.max(280.0, screenW - 40));
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: capWidth,
-          maxHeight: maxHeight ?? double.infinity,
-        ),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white,
-              width: 0.5,
-            ),
-            gradient: const RadialGradient(
-              center: Alignment(-0.1212, -0.1178),
-              radius: 1.7145,
-              colors: [
-                Color.fromRGBO(255, 255, 255, 0.10),
-                Color.fromRGBO(255, 255, 255, 0.15),
-              ],
-              stops: [0.0, 1.0],
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color.fromRGBO(255, 255, 255, 0.25),
-                offset: Offset(4, 4),
-                blurRadius: 30,
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: child,
-            ),
-          ),
-        ),
+    return PartitionGlassDialog(
+      constraints: BoxConstraints(
+        maxWidth: capWidth,
+        maxHeight: maxHeight ?? double.infinity,
       ),
+      fillColor: Colors.transparent,
+      child: child,
     );
   }
 }
@@ -942,11 +909,19 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
     final provider = context.read<HomeShareProvider>();
     final success = await provider.setHomeFromCurrentLocation();
     if (!mounted) return;
-    setState(() => _locationLoading = false);
     if (success) {
-      Navigator.of(context).pop(true);
+      setState(() => _locationLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('현재 위치로 집이 설정되었어요.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } else {
-      setState(() => _error = '현재 위치를 가져오지 못했습니다.\n위치 권한을 확인해주세요.');
+      setState(() {
+        _locationLoading = false;
+        _error = '현재 위치를 가져오지 못했습니다.\n위치 권한을 확인해주세요.';
+      });
     }
   }
 

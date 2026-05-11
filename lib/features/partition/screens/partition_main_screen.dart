@@ -22,6 +22,8 @@ import 'package:partition_app/features/partition/screens/partition_board_screen.
 import 'package:partition_app/features/partition/screens/partition_insight_result_screen.dart';
 import 'package:partition_app/features/partition/services/insights_query_service.dart';
 import 'package:partition_app/features/partition/providers/home_share_provider.dart';
+import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
+
 /// 파티션 메인 화면 - 4개의 탭으로 구성
 class PartitionMainScreen extends StatefulWidget {
   const PartitionMainScreen({super.key});
@@ -36,8 +38,6 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   static const double _alarmPanelOpenHeightFraction = 4 / 5;
 
   static const Color _bottomNavInactiveColor = Color(0xFF26394B);
-  /// 읽은 알림 행 배경 — 흰 톤보다 어둡고 남색(#26394B) 계열 혼합
-  static const Color _alarmReadRowFill = Color(0xFF1A2F42);
 
   /// 닫힌 상태 통합 하단바(글래스+탭) 높이. 드래그·오브·스크롤 인셋과 맞출 것.
   static const double _kUnifiedBottomClosedHeight = 163.0;
@@ -48,8 +48,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   bool _navBarHovered = false;
   bool _navBarPointerOnBar = false;
 
-  bool get _navBarGlow =>
-      _navBarHovered || _navBarPointerOnBar;
+  bool get _navBarGlow => _navBarHovered || _navBarPointerOnBar;
 
   /// 알림 패널 드래그 애니메이션 (0 = 닫힘, 1 = 완전히 열림)
   late AnimationController _panelController;
@@ -79,6 +78,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
   int _alarmUnreadCount = 0;
   bool _alarmLoading = false;
   String? _alarmError;
+
   /// 패널이 열림 구간(값)에 진입했을 때만 API 호출 (중복·닫힘 리셋)
   bool _alarmPanelFetchArmed = false;
   int _alarmFetchGeneration = 0;
@@ -105,6 +105,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
 
   void _handlePanelForAlarms() {
     final v = _panelController.value;
+
     /// 닫힌 상태(값이 낮음)에서 올라올 때마다 GET (끌어올릴 때 리로드)
     const openThreshold = 0.32;
     final isOpenEnough = v >= openThreshold;
@@ -133,13 +134,9 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
       if (!mounted || gen != _alarmFetchGeneration) return;
       setState(() {
         _alarmLoading = false;
-        _alarmError = e is ApiException
-            ? e.message
-            : '알림을 불러오지 못했습니다.';
+        _alarmError = e is ApiException ? e.message : '알림을 불러오지 못했습니다.';
       });
-      final msg = e is ApiException
-          ? e.message
-          : '알림을 불러오지 못했습니다.';
+      final msg = e is ApiException ? e.message : '알림을 불러오지 못했습니다.';
       _showAlarmApiFeedback(msg, isError: true);
     }
   }
@@ -181,8 +178,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
       if (!mounted) return;
       setState(() {
         _alarmMarkReadBusy.remove(item.alarmId);
-        final ix =
-            _alarms.indexWhere((a) => a.alarmId == item.alarmId);
+        final ix = _alarms.indexWhere((a) => a.alarmId == item.alarmId);
         if (ix != -1) {
           final wasUnread = !_alarms[ix].isRead;
           final next = List<AlarmItem>.from(_alarms);
@@ -207,9 +203,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
     if (!mounted) return;
     final data = message.data;
     final sid = int.tryParse(
-      data['settlementId']?.toString() ??
-          data['referenceId']?.toString() ??
-          '',
+      data['settlementId']?.toString() ?? data['referenceId']?.toString() ?? '',
     );
     final typeStr =
         data['type']?.toString() ?? data['alarmType']?.toString() ?? '';
@@ -293,7 +287,8 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
     void apply() {
       if (!_tabPageController.hasClients) return;
       final pos = _tabPageController.page;
-      final current = pos != null ? pos.round() : _tabPageController.initialPage;
+      final current =
+          pos != null ? pos.round() : _tabPageController.initialPage;
       if (current == index) return;
       if (animate) {
         _tabPageController.animateToPage(
@@ -398,8 +393,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
         final t = _panelController.value;
         final screenH = MediaQuery.sizeOf(context).height;
         final openHeight = screenH * _alarmPanelOpenHeightFraction;
-        final height =
-            lerpDouble(_kUnifiedBottomClosedHeight, openHeight, t)!;
+        final height = lerpDouble(_kUnifiedBottomClosedHeight, openHeight, t)!;
         const double bottom = 0.0;
         return Positioned(
           bottom: bottom,
@@ -455,8 +449,8 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                       filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(
-                              _navBarGlow ? 0.20 : 0.15),
+                          color: Colors.white
+                              .withOpacity(_navBarGlow ? 0.20 : 0.15),
                         ),
                       ),
                     ),
@@ -472,8 +466,8 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                     child: Container(
                       decoration: BoxDecoration(
                         border: Border.all(
-                          color: Colors.white.withOpacity(
-                              _navBarGlow ? 0.45 : 0.25),
+                          color: Colors.white
+                              .withOpacity(_navBarGlow ? 0.45 : 0.25),
                           width: 1,
                         ),
                       ),
@@ -501,46 +495,46 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                 child: Padding(
                   padding: const EdgeInsets.only(top: 5),
                   child: SafeArea(
-                  top: false,
-                  left: false,
-                  right: false,
-                  bottom: true,
-                  minimum: EdgeInsets.zero,
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildNavItem(
-                            icon: _currentIndex == 0
-                                ? Icons.calendar_today
-                                : Icons.calendar_today_outlined,
-                            label: '홈',
-                            index: 0,
-                          ),
-                          _buildNavItem(
-                            icon: _currentIndex == 1
-                                ? Icons.inventory_2
-                                : Icons.inventory_2_outlined,
-                            label: '공용 소비',
-                            index: 1,
-                          ),
-                          _buildNavItem(
-                            icon: Icons.home,
-                            label: '파티션 리포트',
-                            index: 2,
-                          ),
-                          _buildNavItem(
-                            icon: Icons.notifications,
-                            label: '게시판',
-                            index: 3,
-                          ),
-                        ],
+                    top: false,
+                    left: false,
+                    right: false,
+                    bottom: true,
+                    minimum: EdgeInsets.zero,
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildNavItem(
+                              icon: _currentIndex == 0
+                                  ? Icons.calendar_today
+                                  : Icons.calendar_today_outlined,
+                              label: '홈',
+                              index: 0,
+                            ),
+                            _buildNavItem(
+                              icon: _currentIndex == 1
+                                  ? Icons.inventory_2
+                                  : Icons.inventory_2_outlined,
+                              label: '공용 소비',
+                              index: 1,
+                            ),
+                            _buildNavItem(
+                              icon: Icons.home,
+                              label: '파티션 리포트',
+                              index: 2,
+                            ),
+                            _buildNavItem(
+                              icon: Icons.notifications,
+                              label: '게시판',
+                              index: 3,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
                   ), // SafeArea
                 ), // Padding
               ),
@@ -724,8 +718,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
     final bottomPad = MediaQuery.of(context).padding.bottom + 12;
     return ListView.separated(
       physics: const BouncingScrollPhysics(),
-      padding:
-          EdgeInsets.fromLTRB(16, 8, 16, bottomPad),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, bottomPad),
       itemCount: _alarms.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, i) {
@@ -746,8 +739,7 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                 return true;
               } catch (e) {
                 if (!mounted) return false;
-                final msg =
-                    e is ApiException ? e.message : '알림을 삭제하지 못했습니다.';
+                final msg = e is ApiException ? e.message : '알림을 삭제하지 못했습니다.';
                 _showAlarmApiFeedback(msg, isError: true);
                 return false;
               }
@@ -772,65 +764,67 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
                 size: 26,
               ),
             ),
-            child: Material(
-              color:
-                  read ? _alarmReadRowFill : Colors.white.withOpacity(0.06),
-              clipBehavior: Clip.antiAlias,
-              child: InkWell(
-                onTap: () => unawaited(_onAlarmRowTapped(item)),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (!item.isRead)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6, right: 10),
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: _alarmMarkReadBusy.contains(item.alarmId)
-                                  ? Colors.white.withOpacity(0.35)
-                                  : const Color(0xFF6BA3FF),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        )
-                      else
-                        const SizedBox(width: 18),
-                      Expanded(
-                        child: Column(
+            child: DecoratedBox(
+              decoration: _alarmRowDecoration(read: read),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Material(
+                    color: _alarmRowFillColor(read: read),
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      onTap: () => unawaited(_onAlarmRowTapped(item)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 14,
+                        ),
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              item.displayMessage,
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(
-                                    read ? 0.72 : 0.96),
-                                fontSize: 15,
-                                fontWeight:
-                                    read ? FontWeight.w400 : FontWeight.w600,
-                                height: 1.35,
-                                decoration: TextDecoration.none,
-                                decorationColor: Colors.transparent,
-                              ),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3, right: 10),
+                              child: _buildAlarmLeadingIndicator(item),
                             ),
-                            const SizedBox(height: 6),
-                            Text(
-                              subLine,
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(
-                                    read ? 0.32 : 0.4),
-                                fontSize: 12,
-                                decoration: TextDecoration.none,
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.displayMessage,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(
+                                        read ? 0.82 : 0.97,
+                                      ),
+                                      fontSize: 15,
+                                      fontWeight: read
+                                          ? FontWeight.w500
+                                          : FontWeight.w700,
+                                      height: 1.35,
+                                      decoration: TextDecoration.none,
+                                      decorationColor: Colors.transparent,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    subLine,
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(
+                                        read ? 0.46 : 0.54,
+                                      ),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      decoration: TextDecoration.none,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -838,6 +832,84 @@ class _PartitionMainScreenState extends State<PartitionMainScreen>
           ),
         );
       },
+    );
+  }
+
+  BoxDecoration _alarmRowDecoration({required bool read}) {
+    return BoxDecoration(
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(
+        color: Colors.white.withOpacity(read ? 0.12 : 0.2),
+        width: 0.7,
+      ),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: read
+            ? [
+                const Color.fromRGBO(255, 255, 255, 0.09),
+                const Color.fromRGBO(255, 255, 255, 0.04),
+              ]
+            : [
+                const Color.fromRGBO(255, 255, 255, 0.16),
+                const Color.fromRGBO(255, 255, 255, 0.07),
+              ],
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: read
+              ? const Color.fromRGBO(255, 255, 255, 0.04)
+              : const Color.fromRGBO(255, 255, 255, 0.08),
+          blurRadius: read ? 14 : 18,
+          offset: const Offset(0, 8),
+        ),
+      ],
+    );
+  }
+
+  Color _alarmRowFillColor({required bool read}) {
+    return read
+        ? Colors.white.withOpacity(0.035)
+        : Colors.white.withOpacity(0.055);
+  }
+
+  Widget _buildAlarmLeadingIndicator(AlarmItem item) {
+    if (!item.isRead) {
+      return Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(
+          color: _alarmMarkReadBusy.contains(item.alarmId)
+              ? Colors.white.withOpacity(0.35)
+              : const Color(0xFF6BA3FF),
+          shape: BoxShape.circle,
+          boxShadow: const [
+            BoxShadow(
+              color: Color.fromRGBO(107, 163, 255, 0.35),
+              blurRadius: 10,
+              offset: Offset(0, 0),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.white.withOpacity(0.16),
+          width: 0.7,
+        ),
+        color: Colors.white.withOpacity(0.04),
+      ),
+      child: Icon(
+        Icons.check_rounded,
+        size: 12,
+        color: Colors.white.withOpacity(0.62),
+      ),
     );
   }
 
@@ -1075,8 +1147,7 @@ class _PartitionAiModalState extends State<_PartitionAiModal> {
     _endDate = DateTime(now.year, now.month, now.day);
   }
 
-  String _fmtYmd(DateTime d) =>
-      '${d.year.toString().padLeft(4, '0')}-'
+  String _fmtYmd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-'
       '${d.month.toString().padLeft(2, '0')}-'
       '${d.day.toString().padLeft(2, '0')}';
 
@@ -1112,27 +1183,54 @@ class _PartitionAiModalState extends State<_PartitionAiModal> {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('마이크 권한'),
-        content: Text(
-          permanentlyDenied
-              ? '마이크가 꺼져 있어 녹음할 수 없습니다. 설정에서 Partition 앱의 마이크를 허용해 주세요.'
-              : '음성으로 질문하려면 마이크 사용에 동의해 주세요. 시스템에서 뜨는 허용 창에서 「허용」을 눌러 주세요.',
-        ),
-        actions: [
-          if (permanentlyDenied)
-            TextButton(
-              onPressed: () async {
-                Navigator.of(ctx).pop();
-                await openAppSettings();
-              },
-              child: const Text('설정 열기'),
+      builder: (ctx) => PartitionGlassDialog(
+        constraints: const BoxConstraints(maxWidth: 360),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '마이크 권한',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Pretendard Variable',
+              ),
             ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('확인'),
-          ),
-        ],
+            const SizedBox(height: 14),
+            Text(
+              permanentlyDenied
+                  ? '마이크가 꺼져 있어 녹음할 수 없습니다. 설정에서 Partition 앱의 마이크를 허용해 주세요.'
+                  : '음성으로 질문하려면 마이크 사용에 동의해 주세요. 시스템에서 뜨는 허용 창에서 「허용」을 눌러 주세요.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (permanentlyDenied)
+                  TextButton(
+                    onPressed: () async {
+                      Navigator.of(ctx).pop();
+                      await openAppSettings();
+                    },
+                    child: const Text('설정 열기'),
+                  ),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('확인'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1141,15 +1239,44 @@ class _PartitionAiModalState extends State<_PartitionAiModal> {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('녹음'),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('확인'),
-          ),
-        ],
+      builder: (ctx) => PartitionGlassDialog(
+        constraints: const BoxConstraints(maxWidth: 360),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              '녹음',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('확인'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1389,55 +1516,71 @@ class _PartitionAiModalState extends State<_PartitionAiModal> {
   }
 
   Widget _buildCard() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(28),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.11),
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: Colors.white.withOpacity(0.22),
-              width: 1.0,
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.5),
+          width: 0.5,
+        ),
+        gradient: const RadialGradient(
+          center: Alignment(-0.1212, -0.1178),
+          radius: 1.7145,
+          colors: [
+            Color.fromRGBO(255, 255, 255, 0.10),
+            Color.fromRGBO(255, 255, 255, 0.15),
+          ],
+          stops: [0.0, 1.0],
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color.fromRGBO(255, 255, 255, 0.25),
+            offset: Offset(4, 4),
+            blurRadius: 30,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 제목
-              const Text(
-                '파티션 AI에게 질문하기',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                  decoration: TextDecoration.none,
-                  decorationColor: Colors.transparent,
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
+            color: Colors.white.withOpacity(0.12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 제목
+                const Text(
+                  '파티션 AI에게 질문하기',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3,
+                    decoration: TextDecoration.none,
+                    decorationColor: Colors.transparent,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              _buildQueryOptions(),
-              const SizedBox(height: 18),
+                _buildQueryOptions(),
+                const SizedBox(height: 18),
 
-              // 모드 토글
-              _buildModeToggle(),
-              const SizedBox(height: 24),
+                // 모드 토글
+                _buildModeToggle(),
+                const SizedBox(height: 24),
 
-              // 모드별 내용
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                child: _modeIndex == 0
-                    ? _buildTextMode()
-                    : _buildVoiceMode(),
-              ),
-            ],
+                // 모드별 내용
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: _modeIndex == 0 ? _buildTextMode() : _buildVoiceMode(),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1564,12 +1707,9 @@ class _PartitionAiModalState extends State<_PartitionAiModal> {
           child: Text(
             label,
             style: TextStyle(
-              color: isSelected
-                  ? Colors.white
-                  : Colors.white.withOpacity(0.45),
+              color: isSelected ? Colors.white : Colors.white.withOpacity(0.45),
               fontSize: 13,
-              fontWeight:
-                  isSelected ? FontWeight.w600 : FontWeight.normal,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
               decoration: TextDecoration.none,
               decorationColor: Colors.transparent,
             ),
@@ -1608,8 +1748,7 @@ class _PartitionAiModalState extends State<_PartitionAiModal> {
                 color: Colors.white.withOpacity(0.32),
                 fontSize: 15,
               ),
-              contentPadding:
-                  const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               border: InputBorder.none,
               enabledBorder: InputBorder.none,
               focusedBorder: InputBorder.none,
@@ -1684,8 +1823,10 @@ class _PartitionAiModalState extends State<_PartitionAiModal> {
             const SizedBox(width: 10),
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: (!_isRecording || _submitting) ? null : _stopRecording,
-                icon: Icon(Icons.stop, color: _kPartitionAiCream.withOpacity(0.95)),
+                onPressed:
+                    (!_isRecording || _submitting) ? null : _stopRecording,
+                icon: Icon(Icons.stop,
+                    color: _kPartitionAiCream.withOpacity(0.95)),
                 label: Text(
                   '녹음 종료',
                   style: TextStyle(
@@ -1725,7 +1866,8 @@ class _PartitionAiModalState extends State<_PartitionAiModal> {
           const SizedBox(height: 10),
           Row(
             children: [
-              Icon(Icons.check_circle, color: Colors.greenAccent.withOpacity(0.85), size: 18),
+              Icon(Icons.check_circle,
+                  color: Colors.greenAccent.withOpacity(0.85), size: 18),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(

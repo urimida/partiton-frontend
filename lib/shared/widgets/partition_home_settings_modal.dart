@@ -11,6 +11,7 @@ import 'package:partition_app/features/auth/providers/auth_provider.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/features/auth/services/kakao_auth_service.dart';
 import 'package:partition_app/features/partition/theme/home_share_style.dart';
+import 'package:partition_app/shared/widgets/partition_glass_dialog.dart';
 
 /// 홈 탭 「설정」— 그룹 리더 여부·그룹 코드·계정 관련 동작
 class PartitionHomeSettingsModal extends StatefulWidget {
@@ -98,31 +99,58 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
     final ok = await showDialog<bool>(
       context: ctx,
       barrierColor: Colors.black.withOpacity(0.55),
-      builder: (c) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2F42),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          title,
-          style: const TextStyle(
-              color: Colors.white, fontWeight: FontWeight.w700, fontSize: 17),
+      builder: (c) => PartitionGlassDialog(
+        constraints: const BoxConstraints(maxWidth: 360),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 17,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.85),
+                height: 1.45,
+                fontFamily: 'Pretendard Variable',
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(c).pop(false),
+                  child: Text(
+                    '취소',
+                    style: TextStyle(color: Colors.white.withOpacity(0.55)),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(c).pop(true),
+                  child: Text(
+                    confirmLabel,
+                    style: const TextStyle(
+                      color: Color(0xFF6BA3FF),
+                      fontFamily: 'Pretendard Variable',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        content: Text(
-          message,
-          style:
-              TextStyle(color: Colors.white.withOpacity(0.85), height: 1.45),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(c).pop(false),
-            child: Text('취소',
-                style: TextStyle(color: Colors.white.withOpacity(0.55))),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(c).pop(true),
-            child: Text(confirmLabel,
-                style: const TextStyle(color: Color(0xFF6BA3FF))),
-          ),
-        ],
       ),
     );
     return ok == true;
@@ -678,67 +706,79 @@ class _RenameHouseholdNameDialogState extends State<_RenameHouseholdNameDialog> 
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: const Color(0xFF1A2F42),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text(
-        '그룹명 변경',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
-          fontSize: 17,
-          fontFamily: 'Pretendard Variable',
-        ),
-      ),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        maxLength: 40,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 15,
-          fontFamily: 'Pretendard Variable',
-        ),
-        decoration: InputDecoration(
-          hintText: '새 그룹명',
-          hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
-          filled: true,
-          fillColor: Colors.white.withOpacity(0.08),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color(0xFF6BA3FF)),
-          ),
-          counterStyle: TextStyle(color: Colors.white.withOpacity(0.45)),
-        ),
-        onSubmitted: (_) => _submit(),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            '취소',
-            style: TextStyle(color: Colors.white.withOpacity(0.55)),
-          ),
-        ),
-        TextButton(
-          onPressed: _submit,
-          child: const Text(
-            '저장',
+    return PartitionGlassDialog(
+      constraints: const BoxConstraints(maxWidth: 360),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            '그룹명 변경',
+            textAlign: TextAlign.center,
             style: TextStyle(
-              color: Color(0xFF6BA3FF),
-              fontWeight: FontWeight.w600,
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 17,
+              fontFamily: 'Pretendard Variable',
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            maxLength: 40,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontFamily: 'Pretendard Variable',
+            ),
+            decoration: InputDecoration(
+              hintText: '새 그룹명',
+              hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.08),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF6BA3FF)),
+              ),
+              counterStyle: TextStyle(color: Colors.white.withOpacity(0.45)),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(
+                  '취소',
+                  style: TextStyle(color: Colors.white.withOpacity(0.55)),
+                ),
+              ),
+              TextButton(
+                onPressed: _submit,
+                child: const Text(
+                  '저장',
+                  style: TextStyle(
+                    color: Color(0xFF6BA3FF),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -792,98 +832,110 @@ class _PickNewLeaderDialogState extends State<_PickNewLeaderDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: const Color(0xFF1A2F42),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text(
-        '새 그룹장 선택',
-        style: TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w700,
-          fontSize: 17,
-          fontFamily: 'Pretendard Variable',
-        ),
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: _loading
-            ? const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Center(
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white54,
-                  ),
-                ),
-              )
-            : _error != null
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.85),
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextButton(
-                        onPressed: _load,
-                        child: const Text('다시 시도'),
-                      ),
-                    ],
-                  )
-                : _candidates.isEmpty
-                    ? Text(
-                        '그룹장을 넘길 다른 그룹원이 없어요.',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.82),
-                          height: 1.45,
-                        ),
-                      )
-                    : ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 280),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: _candidates.length,
-                          separatorBuilder: (_, __) => Divider(
-                            height: 1,
-                            color: Colors.white.withOpacity(0.12),
-                          ),
-                          itemBuilder: (context, i) {
-                            final m = _candidates[i];
-                            return ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(
-                                m.name,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  fontFamily: 'Pretendard Variable',
-                                ),
-                              ),
-                              trailing: Icon(
-                                Icons.chevron_right_rounded,
-                                color: Colors.white.withOpacity(0.4),
-                              ),
-                              onTap: () =>
-                                  Navigator.of(context).pop(m.userId),
-                            );
-                          },
-                        ),
-                      ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            '닫기',
-            style: TextStyle(color: Colors.white.withOpacity(0.55)),
+    return PartitionGlassDialog(
+      constraints: const BoxConstraints(maxWidth: 360),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            '새 그룹장 선택',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 17,
+              fontFamily: 'Pretendard Variable',
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.maxFinite,
+            child: _loading
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white54,
+                      ),
+                    ),
+                  )
+                : _error != null
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _error!,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.85),
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          TextButton(
+                            onPressed: _load,
+                            child: const Text('다시 시도'),
+                          ),
+                        ],
+                      )
+                    : _candidates.isEmpty
+                        ? Text(
+                            '그룹장을 넘길 다른 그룹원이 없어요.',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.82),
+                              height: 1.45,
+                            ),
+                          )
+                        : ConstrainedBox(
+                            constraints: const BoxConstraints(maxHeight: 280),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: _candidates.length,
+                              separatorBuilder: (_, __) => Divider(
+                                height: 1,
+                                color: Colors.white.withOpacity(0.12),
+                              ),
+                              itemBuilder: (context, i) {
+                                final m = _candidates[i];
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(
+                                    m.name,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      fontFamily: 'Pretendard Variable',
+                                    ),
+                                  ),
+                                  trailing: Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: Colors.white.withOpacity(0.4),
+                                  ),
+                                  onTap: () =>
+                                      Navigator.of(context).pop(m.userId),
+                                );
+                              },
+                            ),
+                          ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(
+                  '닫기',
+                  style: TextStyle(color: Colors.white.withOpacity(0.55)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

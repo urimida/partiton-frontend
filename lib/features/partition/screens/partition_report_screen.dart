@@ -164,9 +164,6 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
   static const double _minSymmetricPadBandHalf = 14.0;
   static const double _borderRadiusLarge = 32.0;
   static const double _borderRadiusSmall = 24.0;
-  static const double _borderOpacity = 0.25;
-  static const double _blurSigma = 10.0;
-
   /// 리포트 전체 기간 (집안일·소비·예약)
   late DateTime _rangeStart;
   late DateTime _rangeEnd;
@@ -659,23 +656,22 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
 
   Widget _buildHeader() {
     final topInset = MediaQuery.paddingOf(context).top;
-    return Container(
+    return SizedBox(
       width: double.infinity,
       height: topInset + _headerHeight,
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.white.withOpacity(_borderOpacity),
-            width: 1,
-          ),
-        ),
-      ),
-      child: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: _blurSigma, sigmaY: _blurSigma),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: double.infinity,
+            height: topInset + _headerHeight,
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: Colors.white,
+                  width: 0.5,
+                ),
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.max,
@@ -694,20 +690,13 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
                           '파티션 리포트',
                           textAlign: TextAlign.center,
                           maxLines: 1,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Colors.white,
                             fontFamily: 'Pretendard Variable',
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
                             height: 1.1,
                             letterSpacing: -0.2,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black.withOpacity(0.35),
-                                offset: const Offset(0, 0.5),
-                                blurRadius: 2,
-                              ),
-                            ],
                           ),
                         ),
                       ),
@@ -717,7 +706,27 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
               ],
             ),
           ),
-        ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: -1,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.28),
+                      blurRadius: 10,
+                      spreadRadius: 0,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: const SizedBox(height: 1),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -831,12 +840,17 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(label, style: labelStyle),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(date, style: dateStyle, maxLines: 1),
+              alignment: Alignment.center,
+              child: Text(
+                date,
+                textAlign: TextAlign.center,
+                style: dateStyle,
+                maxLines: 1,
+              ),
             ),
           ),
         ],
