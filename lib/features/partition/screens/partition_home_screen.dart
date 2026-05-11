@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:partition_app/features/partition/providers/home_share_provider.dart';
+import 'package:partition_app/features/partition/theme/home_share_style.dart';
 import 'package:partition_app/features/partition/services/geocoding_service.dart';
 import 'package:partition_app/shared/widgets/home_calendar_widget.dart';
 import 'package:partition_app/shared/widgets/primary_button.dart';
@@ -74,7 +76,7 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
   Future<void> _onEditHomeLocation(BuildContext context) async {
     await showDialog<bool>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.6),
+      barrierColor: Colors.black.withOpacity(0.5),
       builder: (ctx) => const _HomeLocationChangeDialog(),
     );
   }
@@ -105,7 +107,7 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
   Future<bool> _showHomeSetupDialog(BuildContext context) async {
     final result = await showDialog<bool>(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.6),
+      barrierColor: Colors.black.withOpacity(0.5),
       builder: (ctx) => const _HomeLocationSetupDialog(),
     );
     return result ?? false;
@@ -129,33 +131,95 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
   void _showPermissionDeniedDialog(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2F42),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          '위치 권한 필요',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-        ),
-        content: Text(
-          '귀가 공유를 사용하려면 위치 권한이 필요합니다.\n'
-          '설정 > Partition App > 위치에서 허용해주세요.',
-          style: TextStyle(color: Colors.white.withOpacity(0.8), height: 1.5),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child:
-                Text('취소', style: TextStyle(color: Colors.white.withOpacity(0.6))),
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (ctx) => _PartitionGlassModalCard(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const SizedBox(width: 40),
+                  const Expanded(
+                    child: Text(
+                      '위치 권한 필요',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        fontFamily: 'Pretendard Variable',
+                        height: 1.15,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '닫기',
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    icon: Icon(
+                      Icons.close_rounded,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 40,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '귀가 공유를 사용하려면 위치 권한이 필요합니다.\n'
+                '설정 > Partition App > 위치에서 허용해주세요.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.82),
+                  fontSize: 14,
+                  height: 1.5,
+                  fontFamily: 'Pretendard Variable',
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: Text(
+                        '취소',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.65),
+                          fontFamily: 'Pretendard Variable',
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () async {
+                        Navigator.of(ctx).pop();
+                        await openAppSettings();
+                      },
+                      child: Text(
+                        '설정 열기',
+                        style: TextStyle(
+                          color: HomeShareStyle.point.withOpacity(0.95),
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Pretendard Variable',
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(ctx).pop();
-              await openAppSettings();
-            },
-            child: const Text('설정 열기',
-                style: TextStyle(color: Color(0xFF6BA3FF))),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -234,6 +298,71 @@ class _PartitionHomeScreenState extends State<PartitionHomeScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 집안일 배정 모달과 동일한 글래스 카드 셸
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PartitionGlassModalCard extends StatelessWidget {
+  const _PartitionGlassModalCard({
+    required this.child,
+    this.maxWidth = 350,
+    this.maxHeight,
+  });
+
+  final Widget child;
+  final double maxWidth;
+  final double? maxHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.sizeOf(context).width;
+    final capWidth = math.min(maxWidth, math.max(280.0, screenW - 40));
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: capWidth,
+          maxHeight: maxHeight ?? double.infinity,
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white,
+              width: 0.5,
+            ),
+            gradient: const RadialGradient(
+              center: Alignment(-0.1212, -0.1178),
+              radius: 1.7145,
+              colors: [
+                Color.fromRGBO(255, 255, 255, 0.10),
+                Color.fromRGBO(255, 255, 255, 0.15),
+              ],
+              stops: [0.0, 1.0],
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color.fromRGBO(255, 255, 255, 0.25),
+                offset: Offset(4, 4),
+                blurRadius: 30,
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 귀가 공유 토글 카드
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -254,23 +383,41 @@ class _HomeShareCard extends StatelessWidget {
     final bool loading = provider.isLoading;
     final bool hasHome = provider.homeLocation != null;
 
-    final Color accentColor =
-        nearHome ? const Color(0xFFFFFDCB) : const Color(0xFF6BA3FF);
+    final Color accentColor = !enabled
+        ? Colors.white.withOpacity(0.5)
+        : (nearHome
+            ? HomeShareStyle.point
+            : HomeShareStyle.point.withOpacity(0.72));
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(enabled ? 0.15 : 0.10),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: enabled
-                  ? accentColor.withOpacity(0.45)
-                  : Colors.white.withOpacity(0.22),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withOpacity(enabled ? 0.14 : 0.09),
+                HomeShareStyle.main.withOpacity(enabled ? 0.22 : 0.14),
+              ],
             ),
+            border: Border.all(
+              width: 1,
+              color: enabled
+                  ? HomeShareStyle.pointStroke(nearHome ? 0.42 : 0.28)
+                  : Colors.white.withOpacity(0.2),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: HomeShareStyle.main.withOpacity(enabled ? 0.18 : 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
           child: Column(
             children: [
@@ -282,9 +429,14 @@ class _HomeShareCard extends StatelessWidget {
                     height: 38,
                     decoration: BoxDecoration(
                       color: enabled
-                          ? accentColor.withOpacity(0.18)
-                          : Colors.white.withOpacity(0.10),
+                          ? HomeShareStyle.pointFillSoft(0.16)
+                          : HomeShareStyle.main.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: enabled
+                            ? HomeShareStyle.point.withOpacity(0.22)
+                            : Colors.white.withOpacity(0.12),
+                      ),
                     ),
                     child: Icon(
                       enabled && nearHome
@@ -333,16 +485,18 @@ class _HomeShareCard extends StatelessWidget {
                       height: 32,
                       margin: const EdgeInsets.only(right: 8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
+                        color: Colors.white.withOpacity(0.07),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: Colors.white.withOpacity(0.18),
+                          color: Colors.white.withOpacity(0.16),
                         ),
                       ),
                       child: Icon(
                         Icons.edit_location_alt_rounded,
                         size: 16,
-                        color: Colors.white.withOpacity(0.55),
+                        color: enabled
+                            ? HomeShareStyle.point.withOpacity(0.82)
+                            : Colors.white.withOpacity(0.5),
                       ),
                     ),
                   ),
@@ -366,12 +520,12 @@ class _HomeShareCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
                           color: enabled
-                              ? accentColor.withOpacity(0.8)
-                              : Colors.white.withOpacity(0.18),
+                              ? HomeShareStyle.point.withOpacity(0.88)
+                              : Colors.white.withOpacity(0.14),
                           border: Border.all(
                             color: enabled
-                                ? accentColor
-                                : Colors.white.withOpacity(0.28),
+                                ? HomeShareStyle.point.withOpacity(0.95)
+                                : Colors.white.withOpacity(0.22),
                           ),
                         ),
                         child: Stack(
@@ -385,11 +539,13 @@ class _HomeShareCard extends StatelessWidget {
                                 width: 22,
                                 height: 22,
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: enabled
+                                      ? HomeShareStyle.main
+                                      : Colors.white,
                                   borderRadius: BorderRadius.circular(11),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.18),
+                                      color: Colors.black.withOpacity(0.2),
                                       blurRadius: 4,
                                       offset: const Offset(0, 1),
                                     ),
@@ -411,10 +567,10 @@ class _HomeShareCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFFDCB).withOpacity(0.12),
+                    color: HomeShareStyle.pointFillSoft(0.1),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: const Color(0xFFFFFDCB).withOpacity(0.35),
+                      color: HomeShareStyle.pointStroke(0.32),
                     ),
                   ),
                   child: Row(
@@ -424,7 +580,7 @@ class _HomeShareCard extends StatelessWidget {
                         width: 7,
                         height: 7,
                         decoration: const BoxDecoration(
-                          color: Color(0xFFFFFDCB),
+                          color: HomeShareStyle.point,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -432,7 +588,7 @@ class _HomeShareCard extends StatelessWidget {
                       Text(
                         '룸메이트에게 귀가 알림을 보내고 있어요.',
                         style: TextStyle(
-                          color: const Color(0xFFFFFDCB).withOpacity(0.95),
+                          color: HomeShareStyle.point.withOpacity(0.96),
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                           decoration: TextDecoration.none,
@@ -496,164 +652,179 @@ class _HomeLocationSetupDialogState extends State<_HomeLocationSetupDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1A2F42).withOpacity(0.92),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withOpacity(0.18)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return _PartitionGlassModalCard(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 22),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                // 헤더
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF6BA3FF).withOpacity(0.18),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.home_rounded,
-                        color: Color(0xFF6BA3FF),
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      '집 위치 설정',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        decoration: TextDecoration.none,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-
-                // 설명
-                Text(
-                  '귀가 공유 기능을 사용하려면 집 위치를 먼저 등록해야 해요.\n\n'
-                  '집 반경 300m 안에 들어오면 룸메이트에게\n'
-                  '조용한 알림이 전송됩니다.',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.72),
-                    fontSize: 14,
-                    height: 1.6,
-                    decoration: TextDecoration.none,
-                  ),
-                ),
-                const SizedBox(height: 6),
-
-                // 공유 정책 안내
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white.withOpacity(0.12)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _policyRow(Icons.check_circle_outline_rounded,
-                          '"집 근처 도착 여부"만 공유'),
-                      const SizedBox(height: 6),
-                      _policyRow(
-                          Icons.do_not_disturb_alt_rounded, '실시간 위치·이동 경로 비공개'),
-                      const SizedBox(height: 6),
-                      _policyRow(Icons.group_rounded, '같은 파티션 그룹 룸메이트에게만 전송'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // 오류 메시지
-                if (_error != null) ...[
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF8B2942).withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      _error!,
-                      style: TextStyle(
-                        color: Colors.red.shade300,
-                        fontSize: 13,
-                        decoration: TextDecoration.none,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                ],
-
-                // 버튼
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: _loading ? null : _onSetCurrentLocation,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6BA3FF),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      elevation: 0,
-                    ),
-                    icon: _loading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.my_location_rounded, size: 18),
-                    label: Text(
-                      _loading ? '위치 가져오는 중...' : '현재 위치를 집으로 설정',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.none,
-                      ),
+                const SizedBox(width: 40),
+                const Expanded(
+                  child: Text(
+                    '집 위치 설정',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Pretendard Variable',
+                      height: 1.15,
+                      decoration: TextDecoration.none,
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed:
-                        _loading ? null : () => Navigator.of(context).pop(false),
-                    child: Text(
-                      '나중에 설정하기',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
-                        fontSize: 14,
-                        decoration: TextDecoration.none,
-                      ),
-                    ),
+                IconButton(
+                  tooltip: '닫기',
+                  onPressed:
+                      _loading ? null : () => Navigator.of(context).pop(false),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withOpacity(_loading ? 0.35 : 0.9),
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
                   ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              '집 근처에 들어오면 룸메이트에게 알림을 보낼 수 있어요',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.88),
+                fontSize: 13,
+                fontFamily: 'Pretendard Variable',
+                fontWeight: FontWeight.w400,
+                height: 1.08,
+                decoration: TextDecoration.none,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              '귀가 공유 기능을 사용하려면 집 위치를 먼저 등록해야 해요.\n\n'
+              '집 반경 300m 안에 들어오면 룸메이트에게\n'
+              '조용한 알림이 전송됩니다.',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.76),
+                fontSize: 14,
+                height: 1.6,
+                fontFamily: 'Pretendard Variable',
+                fontWeight: FontWeight.w400,
+                decoration: TextDecoration.none,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.35),
+                  width: 0.5,
+                ),
+                gradient: const RadialGradient(
+                  center: Alignment(-0.1212, -0.1178),
+                  radius: 1.7145,
+                  colors: [
+                    Color.fromRGBO(255, 255, 255, 0.06),
+                    Color.fromRGBO(255, 255, 255, 0.12),
+                  ],
+                  stops: [0.0, 1.0],
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _policyRow(Icons.check_circle_outline_rounded,
+                      '"집 근처 도착 여부"만 공유'),
+                  const SizedBox(height: 6),
+                  _policyRow(Icons.do_not_disturb_alt_rounded,
+                      '실시간 위치·이동 경로 비공개'),
+                  const SizedBox(height: 6),
+                  _policyRow(Icons.group_rounded,
+                      '같은 파티션 그룹 룸메이트에게만 전송'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            if (_error != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B2942).withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _error!,
+                  style: TextStyle(
+                    color: Colors.red.shade300,
+                    fontSize: 13,
+                    fontFamily: 'Pretendard Variable',
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _loading ? null : _onSetCurrentLocation,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: HomeShareStyle.point,
+                  foregroundColor: HomeShareStyle.main,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                icon: _loading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: HomeShareStyle.main,
+                        ),
+                      )
+                    : const Icon(Icons.my_location_rounded, size: 18),
+                label: Text(
+                  _loading ? '위치 가져오는 중...' : '현재 위치를 집으로 설정',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'Pretendard Variable',
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed:
+                    _loading ? null : () => Navigator.of(context).pop(false),
+                child: Text(
+                  '나중에 설정하기',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.55),
+                    fontSize: 14,
+                    fontFamily: 'Pretendard Variable',
+                    fontWeight: FontWeight.w400,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -662,13 +833,16 @@ class _HomeLocationSetupDialogState extends State<_HomeLocationSetupDialog> {
   Widget _policyRow(IconData icon, String label) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: const Color(0xFF6BA3FF).withOpacity(0.8)),
+        Icon(icon,
+            size: 14, color: HomeShareStyle.point.withOpacity(0.78)),
         const SizedBox(width: 8),
         Text(
           label,
           style: TextStyle(
             color: Colors.white.withOpacity(0.65),
             fontSize: 12,
+            fontFamily: 'Pretendard Variable',
+            fontWeight: FontWeight.w400,
             decoration: TextDecoration.none,
           ),
         ),
@@ -695,6 +869,8 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
   bool _locationLoading = false;
   bool _searchLoading = false;
   bool _addressLoading = false;
+  /// 역지오코딩 실패 시(카카오맵 OFF·401 등) 카카오 안내 문구
+  String? _reverseGeocodeError;
   List<PlaceSuggestion> _suggestions = [];
   bool _searchedOnce = false;
   String? _error;
@@ -716,12 +892,19 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
   Future<void> _ensureAddressLoaded() async {
     final provider = context.read<HomeShareProvider>();
     if (provider.homeAddress == null && provider.homeLocation != null) {
-      setState(() => _addressLoading = true);
+      setState(() {
+        _addressLoading = true;
+        _reverseGeocodeError = null;
+      });
       final loc = provider.homeLocation!;
-      final address = await GeocodingService.reverseGeocode(loc.lat, loc.lng);
+      final (:address, :error) =
+          await GeocodingService.reverseGeocodeWithDetails(loc.lat, loc.lng);
       if (!mounted) return;
       if (address != null) await provider.updateHomeAddress(address);
-      setState(() => _addressLoading = false);
+      setState(() {
+        _addressLoading = false;
+        _reverseGeocodeError = error;
+      });
     }
   }
 
@@ -792,76 +975,62 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
     final homeAddress = provider.homeAddress;
     final hasHome = provider.homeLocation != null;
     final hasAddress = homeAddress != null && homeAddress.isNotEmpty;
+    final screenH = MediaQuery.sizeOf(context).height;
+    /// 본문만 최대 높이 제한(검색 결과 많을 때). 카드 전체 높이는 내용물에 맞춤.
+    final maxScrollBodyHeight = math.max(160.0, screenH * 0.55);
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.75,
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A2F42).withOpacity(0.92),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withOpacity(0.18)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 헤더 (고정)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6BA3FF).withOpacity(0.18),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.home_rounded,
-                            color: Color(0xFF6BA3FF),
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            '집 위치 변경',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              decoration: TextDecoration.none,
-                            ),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => Navigator.of(context).pop(false),
-                          child: Icon(
-                            Icons.close_rounded,
-                            color: Colors.white.withOpacity(0.45),
-                            size: 22,
-                          ),
-                        ),
-                      ],
+    return _PartitionGlassModalCard(
+      maxWidth: 400,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            child: Row(
+              children: [
+                const SizedBox(width: 40),
+                const Expanded(
+                  child: Text(
+                    '집 위치 변경',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Pretendard Variable',
+                      height: 1.15,
+                      decoration: TextDecoration.none,
                     ),
                   ),
-                  const SizedBox(height: 20),
-
-                  // 스크롤 가능한 본문
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                ),
+                IconButton(
+                  tooltip: '닫기',
+                  onPressed: () => Navigator.of(context).pop(false),
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: Colors.white.withOpacity(0.9),
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 40,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxScrollBodyHeight),
+            child: SingleChildScrollView(
+              shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                           // 현재 설정 주소
                           if (hasHome) ...[
                             Text(
@@ -879,13 +1048,13 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                                   horizontal: 14, vertical: 12),
                               decoration: BoxDecoration(
                                 color: hasAddress
-                                    ? const Color(0xFF6BA3FF).withOpacity(0.12)
-                                    : Colors.white.withOpacity(0.06),
+                                    ? HomeShareStyle.point.withOpacity(0.08)
+                                    : HomeShareStyle.main.withOpacity(0.28),
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                   color: hasAddress
-                                      ? const Color(0xFF6BA3FF).withOpacity(0.3)
-                                      : Colors.white.withOpacity(0.12),
+                                      ? HomeShareStyle.pointStroke(0.28)
+                                      : Colors.white.withOpacity(0.1),
                                 ),
                               ),
                               child: Row(
@@ -905,7 +1074,8 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                                           ? Icons.location_on_rounded
                                           : Icons.location_searching_rounded,
                                       color: hasAddress
-                                          ? const Color(0xFF6BA3FF)
+                                          ? HomeShareStyle.point
+                                              .withOpacity(0.92)
                                           : Colors.white.withOpacity(0.35),
                                       size: 18,
                                     ),
@@ -951,13 +1121,30 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                                                   Text(
                                                     '아래 검색으로 집 주소를 등록해주세요',
                                                     style: TextStyle(
-                                                      color: Colors.orange
-                                                          .withOpacity(0.75),
+                                                      color: HomeShareStyle
+                                                          .point
+                                                          .withOpacity(0.78),
                                                       fontSize: 11,
                                                       decoration:
                                                           TextDecoration.none,
                                                     ),
                                                   ),
+                                                  if (_reverseGeocodeError !=
+                                                      null) ...[
+                                                    const SizedBox(height: 8),
+                                                    Text(
+                                                      _reverseGeocodeError!,
+                                                      style: TextStyle(
+                                                        color: Colors.red
+                                                            .shade300
+                                                            .withOpacity(0.95),
+                                                        fontSize: 11,
+                                                        height: 1.35,
+                                                        decoration:
+                                                            TextDecoration.none,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ],
                                               ),
                                   ),
@@ -974,8 +1161,8 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                               onPressed:
                                   _locationLoading ? null : _onUseCurrentLocation,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF6BA3FF),
-                                foregroundColor: Colors.white,
+                                backgroundColor: HomeShareStyle.point,
+                                foregroundColor: HomeShareStyle.main,
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 13),
                                 shape: RoundedRectangleBorder(
@@ -988,7 +1175,8 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                                       width: 16,
                                       height: 16,
                                       child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white),
+                                          strokeWidth: 2,
+                                          color: HomeShareStyle.main),
                                     )
                                   : const Icon(Icons.my_location_rounded,
                                       size: 16),
@@ -1151,8 +1339,8 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                                             Icon(
                                               Icons.location_on_rounded,
                                               size: 16,
-                                              color: const Color(0xFF6BA3FF)
-                                                  .withOpacity(0.7),
+                                              color: HomeShareStyle.point
+                                                  .withOpacity(0.75),
                                             ),
                                             const SizedBox(width: 10),
                                             Expanded(
@@ -1220,10 +1408,6 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
                   ),
                 ],
               ),
-            ),
-          ),
-        ),
-      ),
-    );
+            );
   }
 }

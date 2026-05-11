@@ -129,35 +129,70 @@ class PartitionInsightResultScreen extends StatelessWidget {
   Widget _blockChip(String key, dynamic value) {
     final label = _blockLabelKo(key);
     final status = value?.toString() ?? '';
-    Color bg;
-    Color fg = Colors.white;
+    final BoxDecoration deco;
+    Color fg;
+
     if (status == 'ok') {
-      bg = const Color(0xFF1B3D2F);
-      fg = const Color(0xFF8FE0C0);
+      // 파티션 연노랑(크림) 기반 글래스 칩 — 초록 톤 제거
+      fg = const Color(0xFFFFFEF5);
+      deco = BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            _cream.withOpacity(0.28),
+            _cream.withOpacity(0.10),
+          ],
+        ),
+        border: Border.all(
+          color: _cream.withOpacity(0.42),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _cream.withOpacity(0.10),
+            blurRadius: 12,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      );
     } else if (status == 'error') {
-      bg = const Color(0xFF3D1B1B);
       fg = const Color(0xFFFFB4B4);
+      deco = BoxDecoration(
+        color: const Color(0xFF3D1B1B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFFFF6B6B).withOpacity(0.35),
+          width: 1,
+        ),
+      );
     } else if (status == 'empty') {
-      bg = const Color(0xFF2A2A35);
       fg = Colors.white70;
+      deco = BoxDecoration(
+        color: const Color(0xFF2A2A35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      );
     } else {
-      bg = const Color(0xFF243040);
       fg = _cream.withOpacity(0.85);
+      deco = BoxDecoration(
+        color: const Color(0xFF243040),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+      );
     }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-      ),
+      decoration: deco,
       child: Text(
         '$label · $status',
         style: TextStyle(
           color: fg,
           fontSize: 12,
           fontWeight: FontWeight.w500,
+          decoration: TextDecoration.none,
         ),
       ),
     );

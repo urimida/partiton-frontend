@@ -115,7 +115,12 @@ class AppConfig {
   // ── 카카오 지도 REST API ──────────────────────────────────────────────────
   /// 카카오 Local API REST 키 (주소 검색·역지오코딩 HTTP 호출용)
   /// https://developers.kakao.com → 내 애플리케이션 → 앱 설정 → 앱 키 → REST API 키
-  static const String kakaoRestApiKey = '6b6d3822b9ffb4d757eef35051d729d3';
+  ///
+  /// 빌드 시 덮어쓰기: `flutter run --dart-define=KAKAO_REST_API_KEY=본인키`
+  static const String kakaoRestApiKey = String.fromEnvironment(
+    'KAKAO_REST_API_KEY',
+    defaultValue: '6b6d3822b9ffb4d757eef35051d729d3',
+  );
 
   // ── 귀가 공유 (위치 기반 알림) ────────────────────────────────────────────
   /// 위치 공유 동의 저장/조회 (POST `{ agreed: bool }` · GET)

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -1034,61 +1033,6 @@ class _UnifiedNavClipper extends CustomClipper<Path> {
 /// 사용자 지정 액센트 (#FFFDCB, 불투명)
 const Color _kPartitionAiCream = Color(0xFFFFFDCB);
 
-/// 화면 가장자리 얇은 선 — 흰색↔크림이 천천히 흐르는 물결 느낌 (전체 화면 그라데이션 대비 가벼움)
-class _ScreenEdgeFlowBorderPainter extends CustomPainter {
-  _ScreenEdgeFlowBorderPainter({required this.flowT});
-
-  /// 0~1 한 바퀴
-  final double flowT;
-
-  static const double _stroke = 1.25;
-  static const double _inset = 0.75;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.width <= 0 || size.height <= 0) return;
-
-    // 화면 비율 기반으로 모서리 반경을 동적으로 계산 (폰 화면 곡률에 맞춤)
-    final cornerRadius = size.width * 0.12;
-
-    final rect = Rect.fromLTWH(
-      _inset,
-      _inset,
-      size.width - _inset * 2,
-      size.height - _inset * 2,
-    );
-    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(cornerRadius));
-    final path = Path()..addRRect(rrect);
-
-    final sweep = SweepGradient(
-      center: Alignment.center,
-      startAngle: flowT * math.pi * 2,
-      endAngle: flowT * math.pi * 2 + math.pi * 2,
-      colors: [
-        Colors.white.withOpacity(0.95),
-        _kPartitionAiCream.withOpacity(0.92),
-        Colors.white.withOpacity(0.95),
-        _kPartitionAiCream.withOpacity(0.92),
-        Colors.white.withOpacity(0.95),
-      ],
-      stops: const [0.0, 0.22, 0.45, 0.68, 1.0],
-    );
-
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = _stroke
-      ..shader = sweep.createShader(
-        Rect.fromLTWH(0, 0, size.width, size.height),
-      );
-
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _ScreenEdgeFlowBorderPainter oldDelegate) =>
-      oldDelegate.flowT != flowT;
-}
-
 class _PartitionAiModal extends StatefulWidget {
   const _PartitionAiModal();
 
@@ -1096,11 +1040,7 @@ class _PartitionAiModal extends StatefulWidget {
   State<_PartitionAiModal> createState() => _PartitionAiModalState();
 }
 
-class _PartitionAiModalState extends State<_PartitionAiModal>
-    with TickerProviderStateMixin {
-  /// 테두리 색 흐름 (느리게 한 바퀴 — 레이어 하나·선만 repaint)
-  late final AnimationController _borderFlowCtrl;
-
+class _PartitionAiModalState extends State<_PartitionAiModal> {
   final InsightsQueryService _insights = InsightsQueryService();
   final AudioRecorder _recorder = AudioRecorder();
 
@@ -1129,11 +1069,6 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
   @override
   void initState() {
     super.initState();
-
-    _borderFlowCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 7),
-    )..repeat();
 
     final now = DateTime.now();
     _startDate = DateTime(now.year, now.month, 1);
@@ -1251,9 +1186,17 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
         }
       }
 
-      final dir = await getTemporaryDirectory();
-      final path =
-          '${dir.path}/insight_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      // 웹: `AudioRecorder.start` 의 path 인자는 플랫폼에서 무시되며, `stop()` 이
+      // `blob:` URL을 돌려줍니다. `path_provider`/디스크 경로 없이 시작합니다.
+      // (record 패키지 주석 참고.)
+      final String recordingPath;
+      if (kIsWeb) {
+        recordingPath = 'web_placeholder';
+      } else {
+        final dir = await getTemporaryDirectory();
+        recordingPath =
+            '${dir.path}/insight_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      }
 
       final recordConfig = RecordConfig(
         encoder: kIsWeb ? AudioEncoder.wav : AudioEncoder.aacLc,
@@ -1262,7 +1205,7 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
       try {
         await _recorder.start(
           recordConfig,
-          path: path,
+          path: recordingPath,
         );
       } catch (e) {
         debugPrint('[PartitionAI] record start failed: $e');
@@ -1279,7 +1222,7 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
       setState(() {
         _isRecording = true;
         _recordingSecs = 0;
-        _recordingPathActive = path;
+        _recordingPathActive = recordingPath;
       });
       _recordingTicker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _recordingSecs++);
@@ -1406,7 +1349,6 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
   void dispose() {
     _recordingTicker?.cancel();
     unawaited(_recorder.dispose());
-    _borderFlowCtrl.dispose();
     _textCtrl.dispose();
     _textFocus.dispose();
     _voiceAuxCtrl.dispose();
@@ -1425,22 +1367,6 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
               child: GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child: Container(color: Colors.black.withOpacity(0.55)),
-              ),
-            ),
-
-            // ── 화면 가장자리 얇은 선: 흰색 ↔ #FFFDCB 색이 천천히 흐름 ─────
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _borderFlowCtrl,
-                  builder: (context, _) {
-                    return CustomPaint(
-                      painter: _ScreenEdgeFlowBorderPainter(
-                        flowT: _borderFlowCtrl.value,
-                      ),
-                    );
-                  },
-                ),
               ),
             ),
 
@@ -1716,7 +1642,7 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
         Text(
           kIsWeb
               ? '브라우저에서 마이크를 허용하면 녹음됩니다. (HTTPS 또는 localhost 필요)'
-              : '마이크로 녹음한 파일을 서버로 보내 분석합니다. (Whisper / 오디오 모델)',
+              : '마이크로 녹음한 파일을 서버로 보내 분석합니다.',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white.withOpacity(0.52),
@@ -1760,9 +1686,21 @@ class _PartitionAiModalState extends State<_PartitionAiModal>
               child: OutlinedButton.icon(
                 onPressed: (!_isRecording || _submitting) ? null : _stopRecording,
                 icon: Icon(Icons.stop, color: _kPartitionAiCream.withOpacity(0.95)),
-                label: const Text('녹음 종료'),
+                label: Text(
+                  '녹음 종료',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(
+                      (!_isRecording || _submitting) ? 0.42 : 1.0,
+                    ),
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
+                  disabledForegroundColor: Colors.white.withOpacity(0.42),
+                  iconColor: Colors.white,
+                  disabledIconColor: Colors.white.withOpacity(0.42),
                   side: BorderSide(color: Colors.white.withOpacity(0.28)),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),

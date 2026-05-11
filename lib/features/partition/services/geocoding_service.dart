@@ -26,6 +26,15 @@ class PlaceSuggestion {
 /// 카카오 검색 결과 래퍼 — 결과 목록과 에러 메시지를 함께 반환
 typedef SearchResult = ({List<PlaceSuggestion> results, String? error});
 
+/// 역지오코딩 결과 — [error] 는 카카오 인증·권한 오류 등 사용자 안내용
+typedef ReverseGeocodeResult = ({String? address, String? error});
+
+typedef _KakaoCoordFetch = ({
+  String? line,
+  int httpStatus,
+  String? bodySnippet,
+});
+
 class GeocodingService {
   /// 카카오 REST API 키 유효성 확인
   static bool get hasApiKey {
@@ -38,24 +47,89 @@ class GeocodingService {
   /// 위도·경도 → 주소 문자열
   /// 카카오 coord2address API 우선, 실패 시 기기 내장 지오코더 폴백
   static Future<String?> reverseGeocode(double lat, double lng) async {
-    if (hasApiKey) {
-      final kakaoResult = await _kakaoReverseGeocode(lat, lng);
-      if (kakaoResult != null) return kakaoResult;
-    }
-    return _deviceReverseGeocode(lat, lng);
+    final r = await reverseGeocodeWithDetails(lat, lng);
+    return r.address;
   }
 
-  static Future<String?> _kakaoReverseGeocode(double lat, double lng) async {
-    // 1단계: coord2address — 법정동 도로명/지번 상세주소
-    final detailed = await _coord2Address(lat, lng);
-    if (detailed != null) return detailed;
+  /// 역지오코딩과 함께 실패 원인(카카오맵 미활성·키 오류 등)을 받을 때 사용합니다.
+  static Future<ReverseGeocodeResult> reverseGeocodeWithDetails(
+      double lat, double lng) async {
+    String? kakaoAuthError;
 
-    // 2단계: coord2regioncode — 행정동 주소 (fallback)
-    return _coord2RegionCode(lat, lng);
+    if (hasApiKey) {
+      final kakao = await _kakaoReverseGeocodeWithAuthInfo(lat, lng);
+      if (kakao.address != null) {
+        return (address: kakao.address, error: null);
+      }
+      kakaoAuthError = kakao.error;
+    }
+
+    final deviceAddr = await _deviceReverseGeocode(lat, lng);
+    if (deviceAddr != null) {
+      return (address: deviceAddr, error: null);
+    }
+
+    if (!hasApiKey) {
+      return (
+        address: null,
+        error: '카카오 REST API 키가 없어 역지오코딩과 검색을 쓸 수 없어요.',
+      );
+    }
+    return (
+      address: null,
+      error: kakaoAuthError,
+    );
+  }
+
+  /// (`address`, `error`) — [error] 는 HTTP 401/403 등에만 채워집니다.
+  static Future<({String? address, String? error})>
+      _kakaoReverseGeocodeWithAuthInfo(double lat, double lng) async {
+    final coord2Addr = await _fetchCoord2Address(lat, lng);
+    if (coord2Addr.line != null) {
+      return (address: coord2Addr.line, error: null);
+    }
+    if (_isKakaoAuthFailure(coord2Addr.httpStatus)) {
+      debugPrint('[GeocodingService] coord2address 오류: ${coord2Addr.bodySnippet}');
+      return (
+        address: null,
+        error: _kakaoReverseFailureMessage(coord2Addr.httpStatus),
+      );
+    }
+
+    final region = await _fetchCoord2RegionCode(lat, lng);
+    if (region.line != null) {
+      return (address: region.line, error: null);
+    }
+    if (_isKakaoAuthFailure(region.httpStatus)) {
+      debugPrint(
+          '[GeocodingService] coord2regioncode 오류: ${region.bodySnippet}');
+      return (
+        address: null,
+        error: _kakaoReverseFailureMessage(region.httpStatus),
+      );
+    }
+
+    return (address: null, error: null);
+  }
+
+  static bool _isKakaoAuthFailure(int status) =>
+      status == 401 || status == 403;
+
+  static String _kakaoReverseFailureMessage(int status) {
+    if (status == 401) {
+      return 'API 키 인증 실패 — REST API 키와 앱 플랫폼(번들 ID·패키지명)을 확인해주세요.';
+    }
+    if (status == 403) {
+      return '카카오맵 API가 꺼져 있거나 호출이 거절됐어요.\n'
+          '카카오 개발자 콘솔 → 해당 앱 → 제품 설정 → 카카오맵 → 사용 설정 ON\n'
+          '(푸시 「API 호출 에러」와 동일한 경우가 많아요.)';
+    }
+    return '주소 변환 오류 (HTTP $status)';
   }
 
   /// /v2/local/geo/coord2address.json — 도로명주소 우선, 없으면 지번주소
-  static Future<String?> _coord2Address(double lat, double lng) async {
+  static Future<_KakaoCoordFetch> _fetchCoord2Address(
+      double lat, double lng) async {
     try {
       final uri = Uri.https(
         'dapi.kakao.com',
@@ -67,34 +141,41 @@ class GeocodingService {
         headers: {'Authorization': 'KakaoAK ${AppConfig.kakaoRestApiKey}'},
       );
       debugPrint('[GeocodingService] coord2address 응답: ${response.statusCode}');
-      if (response.statusCode != 200) {
-        debugPrint('[GeocodingService] coord2address 오류: ${response.body}');
-        return null;
+      final code = response.statusCode;
+      if (code != 200) {
+        return (
+          line: null,
+          httpStatus: code,
+          bodySnippet: _truncateBody(response.body),
+        );
       }
 
       final data = json.decode(response.body) as Map<String, dynamic>;
       final docs = data['documents'] as List<dynamic>;
-      if (docs.isEmpty) return null;
+      if (docs.isEmpty) {
+        return (line: null, httpStatus: 200, bodySnippet: null);
+      }
 
       final doc = docs.first as Map<String, dynamic>;
-      // 도로명주소 우선 (JS 샘플의 road_address.address_name)
       final roadAddress = doc['road_address'] as Map<String, dynamic>?;
       if (roadAddress != null) {
         final name = roadAddress['address_name'] as String?;
-        if (name != null && name.isNotEmpty) return name;
+        if (name != null && name.isNotEmpty) {
+          return (line: name, httpStatus: 200, bodySnippet: null);
+        }
       }
-      // 지번주소 fallback (JS 샘플의 address.address_name)
       final address = doc['address'] as Map<String, dynamic>?;
-      return address?['address_name'] as String?;
+      final lot = address?['address_name'] as String?;
+      return (line: lot, httpStatus: 200, bodySnippet: null);
     } catch (e) {
       debugPrint('[GeocodingService] coord2address 예외: $e');
-      return null;
+      return (line: null, httpStatus: -1, bodySnippet: e.toString());
     }
   }
 
   /// /v2/local/geo/coord2regioncode.json — 행정동(H) 주소
-  /// JS 샘플의 geocoder.coord2RegionCode() 에 해당
-  static Future<String?> _coord2RegionCode(double lat, double lng) async {
+  static Future<_KakaoCoordFetch> _fetchCoord2RegionCode(
+      double lat, double lng) async {
     try {
       final uri = Uri.https(
         'dapi.kakao.com',
@@ -107,30 +188,41 @@ class GeocodingService {
       );
       debugPrint(
           '[GeocodingService] coord2regioncode 응답: ${response.statusCode}');
-      if (response.statusCode != 200) {
-        debugPrint('[GeocodingService] coord2regioncode 오류: ${response.body}');
-        return null;
+      final code = response.statusCode;
+      if (code != 200) {
+        return (
+          line: null,
+          httpStatus: code,
+          bodySnippet: _truncateBody(response.body),
+        );
       }
 
       final data = json.decode(response.body) as Map<String, dynamic>;
       final docs = data['documents'] as List<dynamic>;
-      if (docs.isEmpty) return null;
+      if (docs.isEmpty) {
+        return (line: null, httpStatus: 200, bodySnippet: null);
+      }
 
-      // JS 샘플처럼 region_type === 'H' (행정동) 인 항목 우선 사용
       for (final d in docs) {
         final doc = d as Map<String, dynamic>;
         if (doc['region_type'] == 'H') {
           final name = doc['address_name'] as String?;
-          if (name != null && name.isNotEmpty) return name;
+          if (name != null && name.isNotEmpty) {
+            return (line: name, httpStatus: 200, bodySnippet: null);
+          }
         }
       }
-      // 행정동 없으면 첫 번째 결과 사용
-      return (docs.first as Map<String, dynamic>)['address_name'] as String?;
+      final firstName =
+          (docs.first as Map<String, dynamic>)['address_name'] as String?;
+      return (line: firstName, httpStatus: 200, bodySnippet: null);
     } catch (e) {
       debugPrint('[GeocodingService] coord2regioncode 예외: $e');
-      return null;
+      return (line: null, httpStatus: -1, bodySnippet: e.toString());
     }
   }
+
+  static String? _truncateBody(String body) =>
+      body.length > 200 ? '${body.substring(0, 200)}…' : body;
 
   static Future<String?> _deviceReverseGeocode(double lat, double lng) async {
     try {
@@ -202,7 +294,9 @@ class GeocodingService {
         if (response.statusCode == 401) {
           errorMsg = 'API 키 인증 실패 — REST API 키를 확인해주세요.';
         } else if (response.statusCode == 403) {
-          errorMsg = 'API 권한 없음 — 카카오 개발자 콘솔에서\n"카카오 지도" API를 활성화해주세요.';
+          errorMsg =
+              'API 권한 없음 — 제품 설정 → 카카오맵 사용 설정을 ON으로 해주세요.\n'
+              '(푸시로 온 카카오맵 오류 안내와 같을 수 있어요.)';
         }
         return (results: <PlaceSuggestion>[], error: errorMsg);
       }
