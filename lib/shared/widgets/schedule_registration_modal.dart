@@ -158,17 +158,36 @@ class _ScheduleRegistrationModalState extends State<ScheduleRegistrationModal> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                  // 제목
-                  Text(
-                    '일정 등록하기',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      fontFamily: 'Pretendard Variable',
-                      height: 1.15,
-                    ),
+                  Row(
+                    children: [
+                      const SizedBox(width: 40),
+                      const Expanded(
+                        child: Text(
+                          '일정 등록하기',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                            fontFamily: 'Pretendard Variable',
+                            height: 1.15,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '닫기',
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 40,
+                          minHeight: 40,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   // 선택된 날짜 표시

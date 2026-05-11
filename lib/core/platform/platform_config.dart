@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:partition_app/core/config/app_config.dart';
 
 class PlatformConfig {

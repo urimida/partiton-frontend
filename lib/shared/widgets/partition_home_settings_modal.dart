@@ -10,6 +10,7 @@ import 'package:partition_app/features/auth/models/household_response_model.dart
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
 import 'package:partition_app/features/auth/services/auth_service.dart';
 import 'package:partition_app/features/auth/services/kakao_auth_service.dart';
+import 'package:partition_app/features/partition/theme/home_share_style.dart';
 
 /// 홈 탭 「설정」— 그룹 리더 여부·그룹 코드·계정 관련 동작
 class PartitionHomeSettingsModal extends StatefulWidget {
@@ -37,6 +38,11 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
     setState(() => _loading = true);
     final res = await _authService.fetchMyHousehold();
     if (!mounted) return;
+    final role = res?.result?.role?.trim();
+    if (role != null && role.isNotEmpty) {
+      await StorageService.setUserRole(role);
+    }
+    if (!mounted) return;
     setState(() {
       _household = res;
       _loading = false;
@@ -58,11 +64,15 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
     return '—';
   }
 
-  String get _groupName {
+  /// 서버에 저장된 그룹명(없으면 null)
+  String? get _trimmedHouseholdName {
     final n = _household?.result?.name?.trim();
-    if (n != null && n.isNotEmpty) return n;
-    return '내 그룹';
+    if (n == null || n.isEmpty) return null;
+    return n;
   }
+
+  /// 설정 상단에만 쓰는 표시용 그룹명(미설정 시 플레이스홀더)
+  String get _groupNameDisplay => _trimmedHouseholdName ?? '미설정';
 
   Future<void> _copyGroupCode(BuildContext ctx) async {
     final code = _groupCode;
@@ -225,6 +235,133 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
     );
   }
 
+  Widget _groupSettingsRow(
+    BuildContext ctx, {
+    required String title,
+    String? caption,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Opacity(
+          opacity: enabled ? 1 : 0.48,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withOpacity(0.14)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Pretendard Variable',
+                          height: 1.25,
+                        ),
+                      ),
+                      if (caption != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          caption,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.5),
+                            fontSize: 12,
+                            fontFamily: 'Pretendard Variable',
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white.withOpacity(0.45),
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onRenameGroup(BuildContext ctx) async {
+    final initial = _trimmedHouseholdName ?? '';
+    final newName = await showDialog<String>(
+      context: ctx,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (c) => _RenameHouseholdNameDialog(initialName: initial),
+    );
+    if (newName == null || newName.trim().isEmpty || !mounted) return;
+    try {
+      await _authService.updateHouseholdName(name: newName);
+      await _loadHousehold();
+      if (!ctx.mounted) return;
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(
+          content: Text('그룹명을 변경했어요.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!ctx.mounted) return;
+      final msg = e is ApiException ? e.message : '그룹명 변경에 실패했어요.';
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
+  Future<void> _onTransferLeader(BuildContext ctx) async {
+    final pickedId = await showDialog<int>(
+      context: ctx,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (c) => _PickNewLeaderDialog(authService: _authService),
+    );
+    if (pickedId == null || !mounted) return;
+
+    final ok = await _confirm(
+      ctx,
+      title: '그룹장 변경',
+      message: '선택한 그룹원에게 그룹장을 넘길까요?\n이후에는 그룹원으로 참여해요.',
+      confirmLabel: '넘기기',
+    );
+    if (!ok || !mounted) return;
+
+    try {
+      await _authService.transferHouseholdLeadership(newLeaderUserId: pickedId);
+      await _loadHousehold();
+      if (!ctx.mounted) return;
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(
+          content: Text('그룹장을 변경했어요.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!ctx.mounted) return;
+      final msg = e is ApiException ? e.message : '그룹장 변경에 실패했어요.';
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+      );
+    }
+  }
+
   Widget _mutedButton(BuildContext ctx, String label, VoidCallback onTap) {
     return SizedBox(
       width: double.infinity,
@@ -321,16 +458,41 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
                         ),
                       )
                     else ...[
-                      Text(
-                        _groupName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          fontFamily: 'Pretendard Variable',
-                        ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _groupNameDisplay,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.92),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                fontFamily: 'Pretendard Variable',
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => _onRenameGroup(context),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.only(left: 2, right: 0),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              foregroundColor: HomeShareStyle.point,
+                            ),
+                            child: const Text(
+                              '변경',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                fontFamily: 'Pretendard Variable',
+                                color: HomeShareStyle.point,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 10),
                       Row(
@@ -409,6 +571,23 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
                           fontSize: 11,
                         ),
                       ),
+                      const SizedBox(height: 18),
+                      _groupSettingsRow(
+                        context,
+                        title: '그룹장 변경하기',
+                        caption: '그룹장만 가능',
+                        enabled: _isLeader,
+                        onTap: _isLeader
+                            ? () => _onTransferLeader(context)
+                            : () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('그룹장만 그룹장을 변경할 수 있어요.'),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              },
+                      ),
                       const SizedBox(height: 22),
                       _mutedButton(context, '로그아웃',
                           () => _onLogout(context)),
@@ -426,6 +605,257 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RenameHouseholdNameDialog extends StatefulWidget {
+  const _RenameHouseholdNameDialog({required this.initialName});
+
+  final String initialName;
+
+  @override
+  State<_RenameHouseholdNameDialog> createState() =>
+      _RenameHouseholdNameDialogState();
+}
+
+class _RenameHouseholdNameDialogState extends State<_RenameHouseholdNameDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final t = _controller.text.trim();
+    if (t.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('그룹명을 입력해주세요.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pop(t);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1A2F42),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text(
+        '그룹명 변경',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 17,
+          fontFamily: 'Pretendard Variable',
+        ),
+      ),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLength: 40,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 15,
+          fontFamily: 'Pretendard Variable',
+        ),
+        decoration: InputDecoration(
+          hintText: '새 그룹명',
+          hintStyle: TextStyle(color: Colors.white.withOpacity(0.35)),
+          filled: true,
+          fillColor: Colors.white.withOpacity(0.08),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFF6BA3FF)),
+          ),
+          counterStyle: TextStyle(color: Colors.white.withOpacity(0.45)),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            '취소',
+            style: TextStyle(color: Colors.white.withOpacity(0.55)),
+          ),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: const Text(
+            '저장',
+            style: TextStyle(
+              color: Color(0xFF6BA3FF),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PickNewLeaderDialog extends StatefulWidget {
+  const _PickNewLeaderDialog({required this.authService});
+
+  final AuthService authService;
+
+  @override
+  State<_PickNewLeaderDialog> createState() => _PickNewLeaderDialogState();
+}
+
+class _PickNewLeaderDialogState extends State<_PickNewLeaderDialog> {
+  bool _loading = true;
+  String? _error;
+  List<HouseholdMemberBrief> _candidates = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final myId = await widget.authService.getResolvedCurrentUserId();
+      final all = await widget.authService.fetchHouseholdMembers();
+      final filtered = <HouseholdMemberBrief>[];
+      for (final m in all) {
+        if (myId != null && m.userId == myId) continue;
+        filtered.add(m);
+      }
+      if (!mounted) return;
+      setState(() {
+        _candidates = filtered;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '멤버 목록을 불러오지 못했어요.';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1A2F42),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text(
+        '새 그룹장 선택',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 17,
+          fontFamily: 'Pretendard Variable',
+        ),
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: _loading
+            ? const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white54,
+                  ),
+                ),
+              )
+            : _error != null
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.85),
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: _load,
+                        child: const Text('다시 시도'),
+                      ),
+                    ],
+                  )
+                : _candidates.isEmpty
+                    ? Text(
+                        '그룹장을 넘길 다른 그룹원이 없어요.',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.82),
+                          height: 1.45,
+                        ),
+                      )
+                    : ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 280),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _candidates.length,
+                          separatorBuilder: (_, __) => Divider(
+                            height: 1,
+                            color: Colors.white.withOpacity(0.12),
+                          ),
+                          itemBuilder: (context, i) {
+                            final m = _candidates[i];
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                m.name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  fontFamily: 'Pretendard Variable',
+                                ),
+                              ),
+                              trailing: Icon(
+                                Icons.chevron_right_rounded,
+                                color: Colors.white.withOpacity(0.4),
+                              ),
+                              onTap: () =>
+                                  Navigator.of(context).pop(m.userId),
+                            );
+                          },
+                        ),
+                      ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            '닫기',
+            style: TextStyle(color: Colors.white.withOpacity(0.55)),
+          ),
+        ),
+      ],
     );
   }
 }

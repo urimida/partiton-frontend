@@ -1,7 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'dart:io';
-import 'package:partition_app/shared/utils/app_colors.dart';
 
 class AppTheme {
   /// iOS 스타일 테마 (Cupertino)
@@ -100,6 +99,7 @@ class AppTheme {
     );
   }
 
-  /// 플랫폼에 따라 적절한 테마 반환
-  static bool get useCupertinoStyle => Platform.isIOS;
+  /// 플랫폼에 따라 적절한 테마 반환 (웹은 `dart:io` 불가 → [defaultTargetPlatform] 사용)
+  static bool get useCupertinoStyle =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 }

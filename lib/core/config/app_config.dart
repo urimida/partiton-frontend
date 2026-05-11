@@ -20,6 +20,9 @@ class AppConfig {
   static const String householdsLeaveEndpoint = '/households/leave';
   /// 그룹(가구) 멤버 목록 (정산 시 참여자 선택용)
   static const String householdMembersEndpoint = '/households/members';
+  /// 그룹장 위임 (그룹장만). 본문 예: `{ "newLeaderUserId": number }` — 백엔드 스펙과 다르면 수정
+  static const String householdsLeaderTransferEndpoint =
+      '/households/leader-transfer';
   /// PATCH 등에 사용. GET 내 정보 조회는 앱에서 호출하지 않음(백엔드 미구현).
   static const String updateUserNameEndpoint = '/users/me';
   /// FCM 디바이스 토큰 등록·갱신 (PATCH JSON `fcmToken`)

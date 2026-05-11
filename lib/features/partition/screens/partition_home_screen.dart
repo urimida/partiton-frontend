@@ -1024,7 +1024,6 @@ class _HomeLocationChangeDialogState extends State<_HomeLocationChangeDialog> {
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: maxScrollBodyHeight),
             child: SingleChildScrollView(
-              shrinkWrap: true,
               physics: const ClampingScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               child: Column(

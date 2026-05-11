@@ -262,6 +262,65 @@ class AuthService {
     }
   }
 
+  /// prefs·JWT에서 현재 사용자 숫자 id (멤버 목록 비교·그룹장 위임 등)
+  Future<int?> getResolvedCurrentUserId() async {
+    final s = await StorageService.getUserId();
+    var id = int.tryParse(s ?? '');
+    if (id != null && id > 0) return id;
+    final t = await StorageService.getToken();
+    return _jwtPreferredNumericUserId(t);
+  }
+
+  /// 내 가구 그룹명 변경 (`PATCH /households`, `{ name }`)
+  Future<HouseholdResponseModel> updateHouseholdName({
+    required String name,
+  }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw ApiException(message: '그룹명을 입력해주세요.');
+    }
+    try {
+      final response = await _apiClient.patch(
+        AppConfig.householdsEndpoint,
+        data: {'name': trimmed},
+      );
+      final data = response.data;
+      if (data is! Map<String, dynamic>) {
+        throw ApiException(message: '그룹명 변경 응답 형식이 올바르지 않습니다.');
+      }
+      final model = HouseholdResponseModel.fromJson(data);
+      if (!model.isSuccess) {
+        throw ApiException(
+          message: model.message.isNotEmpty
+              ? model.message
+              : '그룹명을 변경하지 못했습니다.',
+        );
+      }
+      return model;
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException.fromDioError(e);
+    }
+  }
+
+  /// 그룹장을 다른 멤버에게 위임 (그룹장만). `POST /households/leader-transfer`
+  Future<void> transferHouseholdLeadership({
+    required int newLeaderUserId,
+  }) async {
+    if (newLeaderUserId <= 0) {
+      throw ApiException(message: '유효한 그룹원을 선택해주세요.');
+    }
+    try {
+      await _apiClient.post(
+        AppConfig.householdsLeaderTransferEndpoint,
+        data: {'newLeaderUserId': newLeaderUserId},
+      );
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException.fromDioError(e);
+    }
+  }
+
   /// 현재 로그인한 사용자의 그룹(가구) 정보를 서버에서 조회합니다.
   /// 그룹에 속하지 않았거나 요청 실패 시 null 반환.
   Future<HouseholdResponseModel?> fetchMyHousehold() async {
