@@ -7,6 +7,7 @@ import 'package:partition_app/core/network/api_exception.dart';
 import 'package:partition_app/features/auth/providers/auth_provider.dart';
 import 'package:partition_app/features/partition/models/partition_report_model.dart';
 import 'package:partition_app/features/partition/services/report_service.dart';
+import 'package:partition_app/features/partition/theme/home_share_style.dart';
 import 'package:partition_app/features/partition/widgets/shared_expense_filter_chip.dart';
 import 'package:partition_app/shared/utils/partition_dummy_data_policy.dart';
 import 'package:partition_app/shared/widgets/frosted_panel.dart';
@@ -929,7 +930,7 @@ class _PartitionReportScreenState extends State<PartitionReportScreen> {
               filled ? Icons.star_rounded : Icons.star_outline_rounded,
               size: 22,
               color: filled
-                  ? const Color(0xFFFFCA28)
+                  ? HomeShareStyle.point
                   : Colors.white.withOpacity(0.32),
             ),
           );
