@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -4926,7 +4927,9 @@ class _AiReceiptRecognitionFlowDialogState
           ),
           const SizedBox(height: 3),
           Text(
-            '영수증을 촬영해 구매 내역을 등록하시겠어요?',
+            kIsWeb
+                ? '브라우저에서 영수증 이미지를 선택해 구매 내역을 등록하시겠어요?'
+                : '영수증을 촬영해 구매 내역을 등록하시겠어요?',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withOpacity(0.88),
@@ -4937,23 +4940,30 @@ class _AiReceiptRecognitionFlowDialogState
             ),
           ),
           const SizedBox(height: 20),
-          PrimaryButton(
-            label: '촬영하기',
-            onPressed: _openCameraAfterConsent,
-          ),
-          const SizedBox(height: 10),
-          TextButton(
-            onPressed: _openGallery,
-            child: Text(
-              '앨범에서 선택',
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.88),
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'Pretendard Variable',
+          if (kIsWeb)
+            PrimaryButton(
+              label: '이미지에서 선택',
+              onPressed: _openGallery,
+            )
+          else ...[
+            PrimaryButton(
+              label: '촬영하기',
+              onPressed: _openCameraAfterConsent,
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: _openGallery,
+              child: Text(
+                '앨범에서 선택',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.88),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'Pretendard Variable',
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -4979,8 +4989,8 @@ class _AiReceiptRecognitionFlowDialogState
           const SizedBox(height: 7),
           Text(
             _capturedReceipt != null
-                ? '선택한 영수증 이미지를 서버에 보내 품목을 추출합니다.'
-                : '영수증 이미지를 서버에 보내 품목을 추출합니다.',
+                ? '선택한 영수증 이미지 품목을 추출합니다.'
+                : '영수증 이미지 품목을 추출합니다.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withOpacity(0.88),

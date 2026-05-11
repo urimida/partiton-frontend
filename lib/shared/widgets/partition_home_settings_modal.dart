@@ -468,33 +468,61 @@ class _PartitionHomeSettingsModalState extends State<PartitionHomeSettingsModal>
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: Colors.white.withOpacity(0.92),
-                                fontSize: 15,
+                                fontSize: 19.5,
                                 fontWeight: FontWeight.w700,
                                 fontFamily: 'Pretendard Variable',
                               ),
                             ),
                           ),
-                          TextButton(
-                            onPressed: () => _onRenameGroup(context),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.only(left: 2, right: 0),
-                              minimumSize: Size.zero,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              foregroundColor: HomeShareStyle.point,
-                            ),
-                            child: const Text(
-                              '변경',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                fontFamily: 'Pretendard Variable',
-                                color: HomeShareStyle.point,
+                          const SizedBox(width: 10),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => _onRenameGroup(context),
+                              borderRadius: BorderRadius.circular(10),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: BackdropFilter(
+                                  filter: ImageFilter.blur(
+                                      sigmaX: 10, sigmaY: 10),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 7,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color:
+                                            Colors.white.withOpacity(0.28),
+                                        width: 0.5,
+                                      ),
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          Colors.white.withOpacity(0.14),
+                                          Colors.white.withOpacity(0.06),
+                                        ],
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      '변경',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        fontFamily: 'Pretendard Variable',
+                                        color: HomeShareStyle.point,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 20),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

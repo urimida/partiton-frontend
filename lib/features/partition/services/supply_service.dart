@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:partition_app/core/config/app_config.dart';
 import 'package:partition_app/core/network/api_client.dart';
@@ -326,12 +327,11 @@ class SupplyService {
     }
   }
 
-  /// 영수증 이미지 분석 (POST multipart `image` — jpg, jpeg, png)
+  /// 영수증 이미지 분석 (POST multipart `image` — jpg, jpeg, png). 웹은 바이트 업로드.
   Future<ReceiptImageAnalysisResult> analyzeReceiptImage(XFile file) async {
-    final path = file.path;
     var filename = file.name;
     if (filename.isEmpty) {
-      final lower = path.toLowerCase();
+      final lower = file.path.toLowerCase();
       if (lower.endsWith('.png')) {
         filename = 'receipt.png';
       } else {
@@ -339,11 +339,21 @@ class SupplyService {
       }
     }
     try {
-      final form = FormData.fromMap({
-        'image': await MultipartFile.fromFile(
-          path,
+      final MultipartFile imageField;
+      if (kIsWeb) {
+        final bytes = await file.readAsBytes();
+        imageField = MultipartFile.fromBytes(
+          bytes,
           filename: filename,
-        ),
+        );
+      } else {
+        imageField = await MultipartFile.fromFile(
+          file.path,
+          filename: filename,
+        );
+      }
+      final form = FormData.fromMap({
+        'image': imageField,
       });
       final response = await _apiClient.postMultipart(
         AppConfig.suppliesPurchasesImageEndpoint,

@@ -1134,7 +1134,7 @@ class _SharedExpenseManualModalState extends State<SharedExpenseManualModal> {
                       ? '공용 소비 표에 반영하기 위해 새로운 내역을 입력하세요.'
                       : '저장하면 목록에 반영되어 함께 관리할 수 있어요.')
               : (_editIndex == null
-                  ? '새로운 물품을 구매하셨나요? 공용물품으로 등록해주세요.'
+                  ? '새로운 물품을 구매하셨나요?\n공용물품으로 등록해주세요.'
                   : '저장하면 목록에 반영되어 함께 관리돼요'),
           textAlign: TextAlign.center,
           style: _subtitleStyle,
